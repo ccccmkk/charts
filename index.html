@@ -122,6 +122,11 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgb
     <input id="ak" placeholder="Alpha Vantage API Key" oninput="saveKey(this.value)">
     <a href="https://www.alphavantage.co/support/#api-key" target="_blank" class="ak-link">무료발급↗</a>
   </div>
+  <div class="ak-wrap">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3d5a7c" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+    <input id="wk" placeholder="Cloudflare Worker URL (Yahoo용)" oninput="saveWorkerUrl(this.value)" style="width:180px">
+    <a href="https://workers.cloudflare.com" target="_blank" class="ak-link">설정↗</a>
+  </div>
 </header>
 <div class="layout">
   <div class="ca">
@@ -143,7 +148,12 @@ let CR='6mo',CT='',sB=true,sM=true,SD=null,AS=[];
 const RANGE_MO={'3mo':3,'6mo':6,'1y':12,'2y':24};
 function getKey(){return document.getElementById('ak').value.trim()||'';}
 function saveKey(v){localStorage.setItem('avKey',v.trim());}
-window.addEventListener('load',()=>{const k=localStorage.getItem('avKey');if(k){document.getElementById('ak').value=k;}});
+function getWorkerUrl(){return document.getElementById('wk').value.trim()||'';}
+function saveWorkerUrl(v){localStorage.setItem('cfWorkerUrl',v.trim());}
+window.addEventListener('load',()=>{
+  const k=localStorage.getItem('avKey');if(k)document.getElementById('ak').value=k;
+  const w=localStorage.getItem('cfWorkerUrl');if(w)document.getElementById('wk').value=w;
+});
 function setR(r){CR=r;document.querySelectorAll('.rb').forEach((b,i)=>b.classList.toggle('active',['3mo','6mo','1y','2y'][i]===r));if(CT)load(CT);}
 function ti2(i){if(i==='bb')sB=!sB;else sM=!sM;document.querySelector('.ib[data-i="'+i+'"]').classList.toggle('on',i==='bb'?sB:sM);if(SD)drawCharts();}
 function qs(t){document.getElementById('ti').value=t;load(t);}
@@ -154,28 +164,38 @@ async function tryFetch(url, ms=10000){
   try{const r=await fetch(url,{signal:c.signal});clearTimeout(id);if(!r.ok)throw new Error(r.status);return await r.text();}
   catch(e){clearTimeout(id);throw e;}
 }
-// ══ DATA: Yahoo Finance 직접 (1차, 간혹 CORS 허용) ══
+// ══ DATA: Yahoo Finance 파싱 공통 ══
+function parseYahooJson(json){
+  if(!json?.chart?.result?.[0]) return null;
+  const res=json.chart.result[0],m=res.meta,q=res.indicators.quote[0],ts=res.timestamp;
+  const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
+  ts.forEach((t,i)=>{
+    if(q.close[i]==null||q.open[i]==null)return;
+    rows.dates.push(new Date(t*1000).toISOString().split('T')[0]);
+    rows.open.push(q.open[i]);rows.high.push(q.high[i]);
+    rows.low.push(q.low[i]);rows.close.push(q.close[i]);
+    rows.volume.push(q.volume[i]||0);
+  });
+  if(rows.close.length<20) return null;
+  return{rows,ticker:m.symbol,name:m.shortName||m.longName||m.symbol,
+    currency:m.currency||'USD',
+    currentPrice:m.regularMarketPrice||rows.close[rows.close.length-1],
+    previousClose:m.chartPreviousClose||rows.close[rows.close.length-2]};
+}
+// ══ DATA: Yahoo Finance via Cloudflare Worker (1차) ══
+async function getYahooViaWorker(ticker){
+  const base=getWorkerUrl().replace(/\/$/,'');
+  if(!base) return null;
+  const text=await tryFetch(`${base}/${ticker}?range=${CR}`,12000);
+  return parseYahooJson(JSON.parse(text));
+}
+// ══ DATA: Yahoo Finance 직접 (2차, 간혹 CORS 허용) ══
 async function getYahoo(ticker){
   for(const host of ['query1','query2']){
     const url=`https://${host}.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=${CR}&includePrePost=false`;
     try{
-      const text=await tryFetch(url,8000);
-      const json=JSON.parse(text);
-      if(!json?.chart?.result?.[0]) continue;
-      const res=json.chart.result[0],m=res.meta,q=res.indicators.quote[0],ts=res.timestamp;
-      const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
-      ts.forEach((t,i)=>{
-        if(q.close[i]==null||q.open[i]==null)return;
-        rows.dates.push(new Date(t*1000).toISOString().split('T')[0]);
-        rows.open.push(q.open[i]);rows.high.push(q.high[i]);
-        rows.low.push(q.low[i]);rows.close.push(q.close[i]);
-        rows.volume.push(q.volume[i]||0);
-      });
-      if(rows.close.length<20) continue;
-      return{rows,ticker:m.symbol,name:m.shortName||m.longName||m.symbol,
-        currency:m.currency||'USD',
-        currentPrice:m.regularMarketPrice||rows.close[rows.close.length-1],
-        previousClose:m.chartPreviousClose||rows.close[rows.close.length-2]};
+      const result=parseYahooJson(JSON.parse(await tryFetch(url,8000)));
+      if(result) return result;
     }catch{continue;}
   }
   return null;
@@ -211,15 +231,22 @@ async function getAlphaVantage(ticker){
 // ══ LOAD ══
 async function load(ticker){
   CT=ticker;
-  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Alpha Vantage 데이터 요청 중...</div></div>');
+  const hasWorker=!!getWorkerUrl();
+  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog">'+(hasWorker?'<div class="pg act" id="p1">⟳ Yahoo Finance 요청 중...</div><div class="pg" id="p2">○ Alpha Vantage (폴백)</div>':'<div class="pg act" id="p1">⟳ Alpha Vantage 요청 중...</div>')+'</div>');
   document.getElementById('mc').innerHTML='';document.getElementById('rc').innerHTML='';document.getElementById('dc').innerHTML='';
   document.getElementById('panel').innerHTML='<div class="ep"><div class="sp"></div><div class="txt" style="margin-top:8px">분석 중...</div></div>';
   try{
     let result=null;
-    // 1차: Yahoo Finance 직접 (CORS 허용 시 조용히 성공)
-    try{result=await getYahoo(ticker);}catch{}
+    // 1차: Cloudflare Worker → Yahoo Finance 직접 (조용히 시도)
+    try{result=await getYahooViaWorker(ticker)||await getYahoo(ticker);}catch{}
     // 2차: Alpha Vantage
-    if(!result){result=await getAlphaVantage(ticker);}
+    if(!result){
+      const p1=document.getElementById('p1');
+      if(p1&&hasWorker){p1.className='pg';p1.textContent='✗ Yahoo 실패';}
+      const p2=document.getElementById('p2');
+      if(p2){p2.className='pg act';p2.textContent='⟳ Alpha Vantage 요청 중...';}
+      result=await getAlphaVantage(ticker);
+    }
     if(!result) throw new Error('데이터를 가져오지 못했습니다');
     const {rows,...meta}=result;
     SD=Object.assign({},meta,rows);
@@ -280,7 +307,8 @@ function detectSig(d,inds){
     if(r&&rp&&r>=35&&r<=45&&r>rp)add(i,'pb','RSI 저가권 반등',`RSI(${r.toFixed(1)}) 저가 구간 반등. 분할매수 구간.`,2,['RSI']);
     if(bl&&p<bl*1.02&&p>bl)add(i,'pb','BB 하단 근접',`현재가 BB 하단(${bl.toFixed(0)}) 근접. 1차 분할매수.`,2,['BB']);
     if(k&&kp&&k<25&&k>kp)add(i,'pb','스토캐스틱 과매도 반등',`스토캐스틱 K(${k.toFixed(1)}) 반등. 단기 저점.`,2,['Stoch']);
-    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&c[i]>op[i])add(i,'pb','MA20 지지',`MA20(${s20[i].toFixed(0)}) 근처 양봉.`,1,['MA20']);
+    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&p>=s20[i]&&c[i]>op[i])add(i,'pb','MA20 지지',`MA20(${s20[i].toFixed(0)}) 지지 후 양봉.`,1,['MA20']);
+    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&p<=s20[i]&&c[i]<op[i])add(i,'ps2','MA20 저항',`MA20(${s20[i].toFixed(0)}) 저항 후 음봉.`,1,['MA20']);
     // 강매도
     if(r&&rp&&r>65&&r<rp&&rp>70)add(i,'ss2','RSI 과매수 하락',`RSI ${rp.toFixed(1)}→${r.toFixed(1)} 반락. 강한 매도 신호.`,3,['RSI']);
     if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]>=s200[i-1]&&s50[i]<s200[i])add(i,'ss2','데스 크로스',`MA50 MA200 하향 돌파. 중장기 하락 전환.`,3,['MA50','MA200']);
