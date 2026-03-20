@@ -140,8 +140,10 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgb
 </div>
 <script>
 let CR='6mo',CT='',sB=true,sM=true,SD=null,AS=[];
-function saveKey(v){localStorage.setItem('avKey',v);}
-window.addEventListener('load',()=>{const k=localStorage.getItem('avKey');if(k)document.getElementById('ak').value=k;});
+const RANGE_MO={'3mo':3,'6mo':6,'1y':12,'2y':24};
+function getKey(){return document.getElementById('ak').value.trim()||'';}
+function saveKey(v){localStorage.setItem('avKey',v.trim());}
+window.addEventListener('load',()=>{const k=localStorage.getItem('avKey');if(k){document.getElementById('ak').value=k;}});
 function setR(r){CR=r;document.querySelectorAll('.rb').forEach((b,i)=>b.classList.toggle('active',['3mo','6mo','1y','2y'][i]===r));if(CT)load(CT);}
 function ti2(i){if(i==='bb')sB=!sB;else sM=!sM;document.querySelector('.ib[data-i="'+i+'"]').classList.toggle('on',i==='bb'?sB:sM);if(SD)drawCharts();}
 function qs(t){document.getElementById('ti').value=t;load(t);}
@@ -180,22 +182,23 @@ async function getYahoo(ticker){
 }
 // ══ DATA: Alpha Vantage (2차, 무료 CORS 지원) ══
 async function getAlphaVantage(ticker){
-  const key=(document.getElementById('ak').value.trim())||localStorage.getItem('avKey')||'';
+  const key=getKey();
   if(!key) throw new Error('API 키 없음 — 우측 상단에 Alpha Vantage 무료 키를 입력하세요');
   // 한국 주식: 005930.KS → 005930.KSC
   const avTicker=ticker.endsWith('.KS')?ticker.replace('.KS','.KSC'):ticker;
-  const size=['1y','2y'].includes(CR)?'full':'compact';
+  const size=CR==='1y'||CR==='2y'?'full':'compact';
   const url=`https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${avTicker}&outputsize=${size}&apikey=${key}`;
   const text=await tryFetch(url,15000);
   const json=JSON.parse(text);
   if(json['Note']||json['Information']) throw new Error('API 한도 초과 — 1분 후 재시도하거나 새 키를 발급받으세요');
   const ts=json['Time Series (Daily)'];
   if(!ts) throw new Error(`종목을 찾을 수 없습니다 (${avTicker})`);
-  const now=new Date(),cutoff=new Date(now);
-  cutoff.setMonth(cutoff.getMonth()-({'3mo':3,'6mo':6,'1y':12,'2y':24}[CR]||6));
+  const cutoff=new Date();
+  cutoff.setMonth(cutoff.getMonth()-(RANGE_MO[CR]||6));
+  const cutoffStr=cutoff.toISOString().split('T')[0];
   const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
   Object.entries(ts).sort(([a],[b])=>a.localeCompare(b)).forEach(([date,d])=>{
-    if(new Date(date)<cutoff)return;
+    if(date<cutoffStr)return;
     rows.dates.push(date);
     rows.open.push(+d['1. open']);rows.high.push(+d['2. high']);
     rows.low.push(+d['3. low']);rows.close.push(+d['4. close']);
@@ -203,27 +206,20 @@ async function getAlphaVantage(ticker){
   });
   if(rows.close.length<20) throw new Error('데이터 부족 (20일 미만)');
   const last=rows.close[rows.close.length-1],prev=rows.close[rows.close.length-2]||last;
-  const isKR=ticker.includes('.KS')||ticker.includes('.KSC');
-  return{rows,ticker,name:ticker,currency:isKR?'KRW':'USD',currentPrice:last,previousClose:prev};
+  return{rows,ticker,name:ticker,currency:ticker.endsWith('.KS')?'KRW':'USD',currentPrice:last,previousClose:prev};
 }
 // ══ LOAD ══
 async function load(ticker){
   CT=ticker;
-  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Yahoo Finance 직접 연결 시도</div><div class="pg" id="p2">○ Alpha Vantage API (폴백)</div></div>');
+  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Alpha Vantage 데이터 요청 중...</div></div>');
   document.getElementById('mc').innerHTML='';document.getElementById('rc').innerHTML='';document.getElementById('dc').innerHTML='';
   document.getElementById('panel').innerHTML='<div class="ep"><div class="sp"></div><div class="txt" style="margin-top:8px">분석 중...</div></div>';
   try{
     let result=null;
-    // 1차: Yahoo Finance 직접 (CORS 허용 시)
+    // 1차: Yahoo Finance 직접 (CORS 허용 시 조용히 성공)
     try{result=await getYahoo(ticker);}catch{}
     // 2차: Alpha Vantage
-    if(!result){
-      const p1=document.getElementById('p1');
-      if(p1){p1.className='pg';p1.textContent='✗ Yahoo 차단됨 (CORS/IP 블랙리스트)';}
-      const p2=document.getElementById('p2');
-      if(p2){p2.className='pg act';p2.textContent='⟳ Alpha Vantage 요청 중...';}
-      result=await getAlphaVantage(ticker);
-    }
+    if(!result){result=await getAlphaVantage(ticker);}
     if(!result) throw new Error('데이터를 가져오지 못했습니다');
     const {rows,...meta}=result;
     SD=Object.assign({},meta,rows);
