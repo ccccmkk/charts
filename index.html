@@ -13,10 +13,20 @@ body{background:var(--bg);color:var(--t);font-family:'Inter',sans-serif;height:1
 header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(--sf);border-bottom:1px solid var(--br);z-index:2;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.06)}
 .logo{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--bl);white-space:nowrap}
 .logo span{color:var(--t3)}
-.sw{display:flex;align-items:center;background:var(--s2);border:1px solid var(--br);border-radius:7px;padding:0 10px;gap:6px;flex:1;min-width:180px;max-width:300px;transition:border-color .2s}
+.sw{display:flex;align-items:center;background:var(--s2);border:1px solid var(--br);border-radius:7px;padding:0 10px;gap:6px;flex:1;min-width:180px;max-width:340px;transition:border-color .2s;position:relative}
 .sw:focus-within{border-color:var(--bl);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-#ti{background:none;border:none;outline:none;color:var(--t);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;width:100%;padding:7px 0;text-transform:uppercase;letter-spacing:.5px}
-#ti::placeholder{color:var(--t3);font-weight:400;text-transform:none;font-size:11px;letter-spacing:0}
+#ti{background:none;border:none;outline:none;color:var(--t);font-family:'Inter',sans-serif;font-size:12px;font-weight:500;width:100%;padding:7px 0;letter-spacing:0}
+#ti::placeholder{color:var(--t3);font-size:11px}
+.search-drop{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--sf);border:1px solid var(--br);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:100;overflow:hidden;display:none}
+.search-drop.open{display:block}
+.sd-item{display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;transition:background .1s;border-bottom:1px solid var(--br)}
+.sd-item:last-child{border-bottom:none}
+.sd-item:hover,.sd-item.sel{background:rgba(37,99,235,.06)}
+.sd-sym{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--bl);min-width:90px}
+.sd-name{font-size:11px;color:var(--t2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sd-ex{font-size:9px;color:var(--t3);font-family:'JetBrains Mono',monospace}
+.sd-loading{padding:10px 12px;font-size:11px;color:var(--t3);text-align:center}
+.sd-empty{padding:10px 12px;font-size:11px;color:var(--t3);text-align:center}
 .hints{display:flex;gap:3px;flex-wrap:wrap}
 .h{font-size:10px;padding:3px 8px;border-radius:4px;background:var(--s2);border:1px solid var(--br);color:var(--t2);cursor:pointer;transition:all .15s;font-family:'JetBrains Mono',monospace}
 .h:hover{color:var(--bl);border-color:rgba(37,99,235,.4);background:rgba(37,99,235,.05)}
@@ -30,14 +40,19 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
 .ib[data-i=bb].on{border-color:rgba(5,150,105,.45);color:var(--gn);background:rgba(5,150,105,.08)}
 .ib[data-i=ma].on{border-color:rgba(37,99,235,.45);color:var(--bl);background:rgba(37,99,235,.08)}
 .ib[data-i=fib].on{border-color:rgba(217,119,6,.45);color:var(--or);background:rgba(217,119,6,.08)}
-.ib[data-i=ew].on{border-color:rgba(124,58,237,.45);color:var(--pu);background:rgba(124,58,237,.08)}
 .layout{display:flex;height:calc(100vh - 50px)}
 .ca{flex:1;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--br)}
 .ib2{display:flex;align-items:center;gap:10px;padding:5px 12px;background:var(--sf);border-bottom:1px solid var(--br);flex-shrink:0;min-height:36px;flex-wrap:wrap}
 .cw{flex:1;position:relative;display:flex;flex-direction:column;overflow:hidden}
 #mc{flex:1;min-height:240px}
+#vc{height:70px;border-top:1px solid var(--br)}
 #rc{height:85px;border-top:1px solid var(--br)}
 #dc{height:85px;border-top:1px solid var(--br)}
+#fib-ctrl{padding:4px 12px;background:var(--sf);border-bottom:1px solid var(--br);display:none;align-items:center;gap:8px;font-size:10px;font-family:'JetBrains Mono',monospace}
+#fib-ctrl input{width:90px;padding:3px 6px;border:1px solid var(--br);border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10px;background:var(--s2);color:var(--t);outline:none}
+#fib-ctrl input:focus{border-color:var(--bl)}
+#fib-ctrl button{font-size:9px;padding:3px 8px;border:1px solid var(--br);border-radius:4px;background:var(--s2);cursor:pointer;color:var(--t2);font-family:'JetBrains Mono',monospace}
+#fib-ctrl button:hover{background:var(--br)}
 .ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:5;background:rgba(241,245,249,.97)}
 .ov .ico{font-size:36px;opacity:.2}
 .ov .txt{font-size:12px;color:var(--t3);text-align:center;line-height:1.8}
@@ -115,7 +130,7 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
   .layout{flex-direction:column;height:auto}
   .ca{border-right:none;border-bottom:1px solid var(--br)}
   .panel{width:100%;max-height:none}
-  #rc,#dc{height:70px}
+  #rc,#dc,#vc{height:70px}
   .hints{display:none}
   .ak-wrap+.ak-wrap{display:none}
   header{gap:5px;padding:6px 10px}
@@ -133,8 +148,9 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
   <div class="logo">▸ SIGNAL<span>LAB</span></div>
   <div class="sw">
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-    <input id="ti" placeholder="티커 입력 (AAPL, TSLA, 005930.KS)" enterkeyhint="search">
-    <button class="go-btn" onclick="const t=document.getElementById('ti').value.trim().toUpperCase();if(t)load(t)">→</button>
+    <input id="ti" placeholder="종목명 또는 티커 검색..." enterkeyhint="search" autocomplete="off" oninput="onSearch(this.value)" onkeydown="onSearchKey(event)">
+    <button class="go-btn" onclick="const t=document.getElementById('ti').value.trim().toUpperCase();if(t){closeDrop();load(t)}">→</button>
+    <div class="search-drop" id="sd"></div>
   </div>
   <div class="hints">
     <span class="h" onclick="qs('AAPL')">AAPL</span>
@@ -158,7 +174,6 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
     <button class="ib on" data-i="bb" onclick="ti2('bb')">BB밴드</button>
     <button class="ib on" data-i="ma" onclick="ti2('ma')">이동평균</button>
     <button class="ib" data-i="fib" onclick="ti2('fib')">피보나치</button>
-    <button class="ib" data-i="ew" onclick="ti2('ew')">엘리엇파동</button>
   </div>
   <div class="ak-wrap">
     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -172,6 +187,14 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
     <a href="https://workers.cloudflare.com" target="_blank" class="ak-link">설정↗</a>
   </div>
 </header>
+<div id="fib-ctrl">
+  <span style="color:var(--t2)">피보나치 설정:</span>
+  <span style="color:var(--t3)">고점</span>
+  <input id="fib-h" type="number" placeholder="자동" step="any" oninput="onFibInput()">
+  <span style="color:var(--t3)">저점</span>
+  <input id="fib-l" type="number" placeholder="자동" step="any" oninput="onFibInput()">
+  <button onclick="resetFib()">자동</button>
+</div>
 <div class="layout">
   <div class="ca">
     <div class="ib2" id="infobar"><span style="color:var(--t3);font-size:11px;font-family:'JetBrains Mono',monospace">종목을 검색하면 분석이 시작됩니다</span></div>
@@ -180,8 +203,8 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
         <div class="ico">📈</div>
         <div class="txt">티커를 입력하고 Enter를 눌러주세요<br>미국: AAPL · TSLA · NVDA<br>한국: 005930.KS · 000660.KS</div>
       </div>
-      <div id="mc"></div><div id="rc"></div><div id="dc"></div>
-      <div class="zoom-hint">드래그: 범위 줌 · 스크롤: 확대/축소 · 더블클릭: 초기화</div>
+      <div id="mc"></div><div id="vc"></div><div id="rc"></div><div id="dc"></div>
+      <div class="zoom-hint">스크롤: 확대/축소 · 드래그: 이동 · 더블클릭: 초기화</div>
     </div>
   </div>
   <div class="panel" id="panel">
@@ -189,7 +212,9 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
   </div>
 </div>
 <script>
-let CR='6mo', CG='D', CT='', sB=true, sM=true, sFib=false, sEW=false, SD=null, AS=[];
+let CR='6mo', CG='D', CT='', sB=true, sM=true, sFib=false, SD=null, AS=[];
+let fibHigh=null, fibLow=null;
+let RT_TIMER=null;
 const RANGE_MO={'3mo':3,'6mo':6,'1y':12,'2y':24};
 const DEFAULT_FH_KEY='d70go89r01quosk9qikgd70go89r01quosk9qil0';
 function getKey(){return document.getElementById('ak').value.trim()||DEFAULT_FH_KEY;}
@@ -206,6 +231,55 @@ async function testApi(){
   btn.textContent='테스트';btn.disabled=false;
 }
 function saveKey(v){localStorage.setItem('fhKey',v.trim());}
+
+// ══ SEARCH AUTOCOMPLETE ══
+let _searchTimer=null,_searchSel=-1,_searchResults=[];
+async function onSearch(q){
+  const sd=document.getElementById('sd');
+  q=q.trim();
+  if(!q){closeDrop();return;}
+  clearTimeout(_searchTimer);
+  _searchTimer=setTimeout(async()=>{
+    sd.innerHTML='<div class="sd-loading">검색 중...</div>';
+    sd.classList.add('open');
+    try{
+      const key=getKey();
+      const r=await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${key}`);
+      const json=await r.json();
+      const results=(json.result||[]).filter(x=>x.symbol&&x.description&&(x.type==='Common Stock'||x.type===''||x.type==='EQS'||x.type==='DR')).slice(0,10);
+      _searchResults=results;
+      _searchSel=-1;
+      if(!results.length){sd.innerHTML='<div class="sd-empty">결과 없음</div>';return;}
+      sd.innerHTML=results.map((x,i)=>{
+        const isKR=x.symbol.endsWith('.KS')||x.symbol.endsWith('.KQ');
+        const ex=isKR?'KRX':x.symbol.includes('.')?x.symbol.split('.').pop():'US';
+        return `<div class="sd-item" data-i="${i}" onmousedown="pickResult(${i})">
+          <span class="sd-sym">${x.symbol}</span>
+          <span class="sd-name">${x.description}</span>
+          <span class="sd-ex">${ex}</span>
+        </div>`;
+      }).join('');
+    }catch{sd.innerHTML='<div class="sd-empty">검색 실패</div>';}
+  },280);
+}
+function pickResult(i){
+  const r=_searchResults[i];if(!r)return;
+  document.getElementById('ti').value=r.description+' ('+r.symbol+')';
+  closeDrop();
+  load(r.symbol);
+}
+function onSearchKey(e){
+  const items=document.querySelectorAll('.sd-item');
+  if(e.key==='ArrowDown'){e.preventDefault();_searchSel=Math.min(_searchSel+1,items.length-1);items.forEach((el,i)=>el.classList.toggle('sel',i===_searchSel));}
+  else if(e.key==='ArrowUp'){e.preventDefault();_searchSel=Math.max(_searchSel-1,0);items.forEach((el,i)=>el.classList.toggle('sel',i===_searchSel));}
+  else if(e.key==='Enter'){
+    if(_searchSel>=0&&_searchResults[_searchSel]){pickResult(_searchSel);}
+    else{const t=document.getElementById('ti').value.trim();if(t){closeDrop();load(t.toUpperCase());}}
+  }
+  else if(e.key==='Escape'){closeDrop();}
+}
+function closeDrop(){const sd=document.getElementById('sd');sd.classList.remove('open');_searchSel=-1;}
+document.addEventListener('click',e=>{if(!e.target.closest('.sw'))closeDrop();});
 function getWorkerUrl(){return document.getElementById('wk').value.trim()||'https://yahoo-proxy.cm99i.workers.dev';}
 function saveWorkerUrl(v){localStorage.setItem('cfWorkerUrl',v.trim());}
 window.addEventListener('load',()=>{
@@ -215,9 +289,26 @@ window.addEventListener('load',()=>{
 function setR(r){CR=r;document.querySelectorAll('#range-btns .rb').forEach((b,i)=>b.classList.toggle('active',['3mo','6mo','1y','2y'][i]===r));if(CT)load(CT);}
 function setG(g){CG=g;document.querySelectorAll('#gran-btns .rb').forEach((b,i)=>b.classList.toggle('active',['D','W','M'][i]===g));if(SD)process();}
 function ti2(x){
-  if(x==='bb')sB=!sB;else if(x==='ma')sM=!sM;else if(x==='fib')sFib=!sFib;else if(x==='ew')sEW=!sEW;
-  const on=x==='bb'?sB:x==='ma'?sM:x==='fib'?sFib:sEW;
+  if(x==='bb')sB=!sB;else if(x==='ma')sM=!sM;else if(x==='fib')sFib=!sFib;
+  const on=x==='bb'?sB:x==='ma'?sM:sFib;
   document.querySelector('.ib[data-i="'+x+'"]').classList.toggle('on',on);
+  // Show/hide fib controls
+  if(x==='fib'){
+    document.getElementById('fib-ctrl').style.display=sFib?'flex':'none';
+  }
+  if(SD)drawCharts();
+}
+function onFibInput(){
+  const hv=parseFloat(document.getElementById('fib-h').value);
+  const lv=parseFloat(document.getElementById('fib-l').value);
+  fibHigh=isNaN(hv)?null:hv;
+  fibLow=isNaN(lv)?null:lv;
+  if(SD)drawCharts();
+}
+function resetFib(){
+  fibHigh=null;fibLow=null;
+  document.getElementById('fib-h').value='';
+  document.getElementById('fib-l').value='';
   if(SD)drawCharts();
 }
 function qs(t){document.getElementById('ti').value=t;load(t);}
@@ -390,7 +481,7 @@ async function load(ticker){
   const isKR=ticker.endsWith('.KS')||ticker.endsWith('.KQ');
   const fallbackLabel=isKR?'공공데이터 API (한국주식)':'Finnhub';
   setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Yahoo Finance 요청 중...</div><div class="pg" id="p2">○ Stooq (폴백1)</div><div class="pg" id="p3">○ '+fallbackLabel+' (폴백2)</div></div>');
-  document.getElementById('mc').innerHTML='';document.getElementById('rc').innerHTML='';document.getElementById('dc').innerHTML='';
+  document.getElementById('mc').innerHTML='';document.getElementById('rc').innerHTML='';document.getElementById('dc').innerHTML='';document.getElementById('vc').innerHTML='';
   document.getElementById('panel').innerHTML='<div class="ep"><div class="sp"></div><div class="txt" style="margin-top:8px">분석 중...</div></div>';
   try{
     let result=null;
@@ -416,6 +507,27 @@ async function load(ticker){
   }
 }
 function setOv(html){const o=document.getElementById('ov');o.style.display='flex';o.innerHTML=html;}
+
+// ══ REAL-TIME PRICE ══
+async function refreshPrice(){
+  if(!SD||!CT)return;
+  try{
+    const base=getWorkerUrl().replace(/\/$/,'');
+    const url=base?`${base}/${CT}?range=1d`:`https://query1.finance.yahoo.com/v8/finance/chart/${CT}?interval=1m&range=1d`;
+    const json=JSON.parse(await tryFetch(url,5000));
+    const meta=json?.chart?.result?.[0]?.meta;
+    if(meta?.regularMarketPrice){
+      SD.currentPrice=meta.regularMarketPrice;
+      if(meta.chartPreviousClose)SD.previousClose=meta.chartPreviousClose;
+      updateInfobar();
+    }
+  }catch{}
+}
+function startRealtime(){
+  if(RT_TIMER)clearInterval(RT_TIMER);
+  refreshPrice();
+  RT_TIMER=setInterval(refreshPrice,30000);
+}
 
 // ══ INDICATORS ══
 const sma=(a,n)=>a.map((_,i)=>i<n-1?null:a.slice(i-n+1,i+1).reduce((s,v)=>s+v,0)/n);
@@ -451,50 +563,18 @@ function cdlPatterns(op,h,l,c){const p=[];
 
 // ══ FIBONACCI 되돌림 + 확장 ══
 function getFibLevels(highs,lows){
-  const maxH=Math.max(...highs),minL=Math.min(...lows),diff=maxH-minL;
+  const maxH=fibHigh!==null?fibHigh:Math.max(...highs);
+  const minL=fibLow!==null?fibLow:Math.min(...lows);
+  const diff=maxH-minL;
   const colOf=l=>l===0||l===1?'#94a3b8':l===0.618||l===0.382?'#f97316':l===0.5?'#eab308':l===0.236||l===0.786?'#a3a3a3':'#94a3b8';
   const levels=[
     ...[[0,false],[0.236,false],[0.382,false],[0.5,false],[0.618,false],[0.786,false],[1.0,false]].map(([l])=>({pct:l,price:maxH-diff*l,color:colOf(l),label:`${(l*100).toFixed(1)}%`,ext:false})),
     {pct:1.272,price:maxH+(diff*0.272),color:'#8b5cf6',label:'127.2% (확장)',ext:true},
-    {pct:1.618,price:maxH+(diff*0.618),color:'#7c3aed',label:'161.8% (확장)',ext:true}, 
+    {pct:1.618,price:maxH+(diff*0.618),color:'#7c3aed',label:'161.8% (확장)',ext:true},
     {pct:-0.272,price:minL-(diff*0.272),color:'#8b5cf6',label:'127.2% 하방',ext:true},
     {pct:-0.618,price:minL-(diff*0.618),color:'#7c3aed',label:'161.8% 하방',ext:true},
   ];
   return levels;
-}
-
-// ══ 엘리엇 파동 (지그재그 스윙 자동 감지) ══
-function findSwings(highs,lows,minPct=0.04){
-  const n=highs.length,pts=[];
-  let dir=null,pivIdx=0,pivVal=null;
-  for(let i=1;i<n;i++){
-    if(dir===null){
-      if(highs[i]>highs[0]){dir='up';pivIdx=i;pivVal=highs[i];}
-      else if(lows[i]<lows[0]){dir='dn';pivIdx=i;pivVal=lows[i];}
-      continue;
-    }
-    if(dir==='up'){
-      if(highs[i]>pivVal){pivIdx=i;pivVal=highs[i];}
-      else if(pivVal>0&&(pivVal-lows[i])/pivVal>minPct){
-        pts.push({i:pivIdx,price:highs[pivIdx],type:'H'});
-        dir='dn';pivIdx=i;pivVal=lows[i];
-      }
-    } else {
-      if(lows[i]<pivVal){pivIdx=i;pivVal=lows[i];}
-      else if(pivVal>0&&(highs[i]-pivVal)/pivVal>minPct){
-        pts.push({i:pivIdx,price:lows[pivIdx],type:'L'});
-        dir='up';pivIdx=i;pivVal=highs[i];
-      }
-    }
-  }
-  if(pivIdx>0)pts.push({i:pivIdx,price:dir==='up'?highs[pivIdx]:lows[pivIdx],type:dir==='up'?'H':'L'});
-  return pts;
-}
-function getElliottWaves(highs,lows,dates){
-  const swings=findSwings(highs,lows);
-  const recent=swings.slice(-9);
-  const labels=['①','②','③','④','⑤','A','B','C','C'];
-  return recent.map((s,i)=>({...s,date:dates[s.i],label:labels[i]||String(i+1)}));
 }
 
 // ══ SIGNALS ══
@@ -545,7 +625,9 @@ function process(){
   const displaySD={...rows,ticker:SD.ticker,name:SD.name,currency:SD.currency,currentPrice:SD.currentPrice,previousClose:SD.previousClose};
   AS=detectSig(displaySD,inds);
   SD._i=inds;SD._rows=rows;
-  drawCharts();updateInfobar();drawPanel();}
+  drawCharts();updateInfobar();drawPanel();
+  startRealtime();
+}
 
 // ══ CHARTS ══
 function drawCharts(){
@@ -555,18 +637,7 @@ function drawCharts(){
   document.getElementById('ov').style.display='none';
   const bg='rgba(0,0,0,0)',gc='rgba(203,213,225,.7)',ac='#94a3b8',ff="'JetBrains Mono',monospace";
   const ax={gridcolor:gc,zerolinecolor:gc,tickfont:{family:ff,size:9,color:ac},color:ac,showgrid:true};
-  const sCfg={sb:{sym:'triangle-up',col:'#059669',sz:12},pb:{sym:'triangle-up-open',col:'#10b981',sz:9},
-    ss2:{sym:'triangle-down',col:'#dc2626',sz:12},ps2:{sym:'triangle-down-open',col:'#ef4444',sz:9},
-    dg:{sym:'x',col:'#d97706',sz:11},op:{sym:'diamond',col:'#2563eb',sz:10}};
-  const cNm={sb:'강한 매수',pb:'분할 매수',ss2:'강한 매도',ps2:'분할 매도',dg:'위험',op:'기회'};
-  const byCat={};AS.forEach(s=>{if(!byCat[s.category])byCat[s.category]=[];byCat[s.category].push(s);});
-  const sTr=Object.entries(byCat).map(([cat,ss])=>{
-    const c=sCfg[cat],ab=cat.includes('ss2')||cat==='ps2'||cat==='dg';
-    return{type:'scatter',mode:'markers',name:cNm[cat],x:ss.map(s=>s.date),
-      y:ss.map(s=>ab?high[s.i]*1.014:low[s.i]*0.986),
-      marker:{symbol:c.sym,color:c.col,size:c.sz,line:{width:1.5,color:c.col}},
-      text:ss.map(s=>`<b>${s.name}</b><br>📍 ${SD.currency==='KRW'?Math.round(s.price).toLocaleString('ko-KR')+'원':'$'+s.price.toFixed(2)}<br>${s.desc}`),
-      hovertemplate:'%{text}<extra></extra>',showlegend:true};});
+
   const tr=[{type:'candlestick',x:dates,open,high,low,close,
     increasing:{line:{color:'#059669',width:1.5},fillcolor:'rgba(5,150,105,.85)'},
     decreasing:{line:{color:'#dc2626',width:1.5},fillcolor:'rgba(220,38,38,.85)'},
@@ -577,7 +648,6 @@ function drawCharts(){
     tr.push({type:'scatter',mode:'lines',x:dates,y:B.mid,line:{color:'rgba(5,150,105,.55)',width:1},showlegend:false,hoverinfo:'skip'});}
   if(sM){[{d:s20,c:'#f59e0b',l:'MA20'},{d:s50,c:'#3b82f6',l:'MA50'},{d:s200,c:'#8b5cf6',l:'MA200'}].forEach(({d,c,l})=>
     tr.push({type:'scatter',mode:'lines',x:dates,y:d,line:{color:c,width:1.5},name:l,showlegend:true,hoverinfo:'skip'}));}
-  tr.push(...sTr);
 
   // ── 피보나치 ──
   const fibShapes=[],fibAnno=[];
@@ -592,35 +662,58 @@ function drawCharts(){
     });
   }
 
-  // ── 엘리엇 파동 ──
-  const ewShapes=[],ewAnno=[];
-  if(sEW){
-    const waves=getElliottWaves(high,low,dates);
-    if(waves.length>1){
-      for(let i=0;i<waves.length-1;i++){
-        ewShapes.push({type:'line',x0:waves[i].date,x1:waves[i+1].date,y0:waves[i].price,y1:waves[i+1].price,
-          line:{color:'rgba(124,58,237,.55)',width:2},xref:'x',yref:'y'});
-      }
-      waves.forEach(w=>{
-        ewAnno.push({x:w.date,y:w.price,xref:'x',yref:'y',xanchor:'center',
-          yanchor:w.type==='H'?'bottom':'top',
-          text:`<b>${w.label}</b>`,showarrow:false,
-          font:{family:ff,size:12,color:'#7c3aed'},
-          bgcolor:'rgba(124,58,237,.1)',bordercolor:'rgba(124,58,237,.35)',
-          borderwidth:1,borderpad:3});
-      });
+  // ── 액션어블 시그널 어노테이션 ──
+  const vm=SD._i.vm||sma(volume,20);
+  const byIdx={};
+  AS.forEach(s=>{if(!byIdx[s.i])byIdx[s.i]=[];byIdx[s.i].push(s);});
+
+  const actAnno=[];
+  Object.entries(byIdx).forEach(([idx,sigs])=>{
+    const i=+idx;
+    const buySigs=sigs.filter(s=>s.category==='sb'||s.category==='pb');
+    const sellSigs=sigs.filter(s=>s.category==='ss2'||s.category==='ps2');
+    const hasStrongBuy=sigs.some(s=>s.category==='sb');
+    const hasStrongSell=sigs.some(s=>s.category==='ss2');
+    const actionBuy=(hasStrongBuy||(buySigs.length>=2))&&buySigs.length>sellSigs.length;
+    const actionSell=(hasStrongSell||(sellSigs.length>=2))&&sellSigs.length>buySigs.length;
+
+    if(!actionBuy&&!actionSell)return;
+
+    const entry=close[i];
+    const kr=SD.currency==='KRW';
+    const fmt=v=>kr?Math.round(v).toLocaleString('ko-KR')+'원':'$'+v.toFixed(2);
+
+    if(actionBuy){
+      const target=B.up[i]||entry*1.05;
+      const stop=s200[i]?Math.min(entry*0.97,s200[i]*0.99):entry*0.97;
+      const txt=`매수 ${fmt(entry)}<br>목표 ${fmt(target)}<br>손절 ${fmt(stop)}`;
+      actAnno.push({x:dates[i],y:low[i]*0.992,xref:'x',yref:'y',
+        text:txt,showarrow:true,arrowhead:2,arrowcolor:'#059669',arrowsize:.8,
+        ax:0,ay:50,xanchor:'center',yanchor:'top',
+        font:{family:ff,size:8,color:'#059669'},
+        bgcolor:'rgba(5,150,105,.1)',bordercolor:'rgba(5,150,105,.5)',borderwidth:1,borderpad:3});
     }
-  }
+    if(actionSell){
+      const target=B.lo[i]||entry*0.95;
+      const stop=entry*1.03;
+      const txt=`매도 ${fmt(entry)}<br>목표 ${fmt(target)}<br>손절 ${fmt(stop)}`;
+      actAnno.push({x:dates[i],y:high[i]*1.008,xref:'x',yref:'y',
+        text:txt,showarrow:true,arrowhead:2,arrowcolor:'#dc2626',arrowsize:.8,
+        ax:0,ay:-50,xanchor:'center',yanchor:'bottom',
+        font:{family:ff,size:8,color:'#dc2626'},
+        bgcolor:'rgba(220,38,38,.1)',bordercolor:'rgba(220,38,38,.5)',borderwidth:1,borderpad:3});
+    }
+  });
 
   const lo2={paper_bgcolor:bg,plot_bgcolor:bg,margin:{t:6,r:sFib?90:50,b:3,l:6},
-    xaxis:{...ax,type:'category',showticklabels:false,rangeslider:{visible:false}},
+    xaxis:{...ax,type:'category',showticklabels:false,rangeslider:{visible:false},autorange:true},
     yaxis:{...ax,side:'right',tickformat:',.0f'},
-    dragmode:'zoom',
+    dragmode:'pan',
     legend:{orientation:'h',x:0,y:1.02,xanchor:'left',bgcolor:'rgba(255,255,255,0)',font:{family:ff,size:8,color:ac}},
     hovermode:'x unified',
     hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',font:{family:ff,size:10,color:'#0f172a'}},
-    shapes:[...fibShapes,...ewShapes],
-    annotations:[...fibAnno,...ewAnno]};
+    shapes:[...fibShapes],
+    annotations:[...fibAnno,...actAnno]};
   Plotly.newPlot('mc',tr,lo2,{responsive:true,displayModeBar:'hover',scrollZoom:true,
     modeBarButtonsToRemove:['toImage','sendDataToCloud','select2d','lasso2d','autoScale2d','toggleSpikelines']});
 
@@ -648,8 +741,24 @@ function drawCharts(){
     hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',font:{family:ff,size:10,color:'#0f172a'}}},
   {responsive:true,displayModeBar:false});
 
+  const volC=volume.map((v,i)=>close[i]>=open[i]?'rgba(5,150,105,.5)':'rgba(220,38,38,.5)');
+  Plotly.newPlot('vc',[
+    {type:'bar',x:dates,y:volume,marker:{color:volC},hovertemplate:'거래량: %{y:,.0f}<extra></extra>'},
+    {type:'scatter',mode:'lines',x:dates,y:sma(volume,20),line:{color:'rgba(37,99,235,.5)',width:1.2},hoverinfo:'skip',showlegend:false},
+  ],{paper_bgcolor:bg,plot_bgcolor:bg,margin:{t:2,r:50,b:3,l:6},
+    xaxis:{...ax,type:'category',showticklabels:false,rangeslider:{visible:false}},
+    yaxis:{...ax,side:'right',tickformat:'.2s'},
+    annotations:[{x:.01,y:.88,xref:'paper',yref:'paper',text:'VOL',font:{family:ff,size:8,color:ac},showarrow:false}],
+    hovermode:'x unified',showlegend:false,
+    hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',font:{family:ff,size:10,color:'#0f172a'}}},
+  {responsive:true,displayModeBar:false});
+
   const cw=document.querySelector('.cw'),_mob=window.innerWidth<=768;
-  document.getElementById('mc').style.height=(_mob?Math.max(260,window.innerWidth*.55):Math.max(230,cw.clientHeight-180))+'px';
+  document.getElementById('mc').style.height=(_mob?Math.max(260,window.innerWidth*.55):Math.max(230,cw.clientHeight-230))+'px';
+
+  // Store actAnno count for infobar
+  SD._actAnnoCount=actAnno.length;
+  updateInfobar();
 }
 
 // ══ INFOBAR ══
@@ -658,13 +767,16 @@ function updateInfobar(){
   const ch=cp-pc,chp=(ch/pc)*100,up=ch>=0;
   const ps=cur==='KRW'?cp.toLocaleString('ko-KR')+'원':'$'+cp.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const gLabel={'D':'일봉','W':'주봉','M':'월봉'}[CG];
+  const isUS=cur!=='KRW';
+  const liveBadge=isUS?` <span style="font-size:8px;color:var(--gn);font-family:'JetBrains Mono',monospace;padding:1px 4px;border:1px solid var(--gn);border-radius:2px">LIVE</span>`:'';
+  const actCount=SD._actAnnoCount!=null?SD._actAnnoCount:0;
   document.getElementById('infobar').innerHTML=`
     <span class="in">${ticker}</span>
     <span style="font-size:10px;color:var(--t2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
-    <span class="ip" style="color:${up?'var(--gn)':'var(--rd)'}">${ps}</span>
+    <span class="ip" style="color:${up?'var(--gn)':'var(--rd)'}">${ps}</span>${liveBadge}
     <span class="ich ${up?'up':'dn'}">${up?'+':''}${ch.toFixed(cur==='KRW'?0:2)} (${up?'+':''}${chp.toFixed(2)}%)</span>
     <span class="badge">${gLabel}</span>
-    <span class="im">${AS.length}개 시그널 · ${SD._rows.dates.length}봉</span>`;}
+    <span class="im">${actCount}개 신호표시 · ${AS.length}개 감지 · ${SD._rows.dates.length}봉</span>`;}
 
 // ══ PANEL ══
 function drawPanel(){
@@ -723,7 +835,7 @@ function drawPanel(){
         <div class="sin">${s.name}</div><div class="sdesc">${s.desc}</div>
       </div>`).join('')||'<div style="color:var(--t3);font-size:10px;text-align:center;padding:12px">시그널 없음</div>'}
     </div></div>`;}
-window.addEventListener('resize',()=>{if(SD){['mc','rc','dc'].forEach(id=>Plotly.Plots.resize(id));}});
+window.addEventListener('resize',()=>{if(SD){['mc','rc','dc','vc'].forEach(id=>Plotly.Plots.resize(id));}});
 </script>
 </body>
 </html>
