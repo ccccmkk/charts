@@ -206,27 +206,34 @@ async function getYahoo(ticker){
   }
   return null;
 }
-// ══ DATA: Finnhub (폴백, 60회/분 무료) ══
+// ══ DATA: Finnhub (3개월 청크 분할 — 1Y/2Y 지원) ══
 async function getFinnhub(ticker){
   const key=getKey();
-  if(!key) throw new Error('API 키 없음 — 우측 상단에 Finnhub 무료 키를 입력하세요 (finnhub.io/register)');
-  if(ticker.endsWith('.KS')) throw new Error('Finnhub 무료플랜은 한국주식 미지원 — Cloudflare Worker URL을 설정해 Yahoo Finance를 사용하세요');
+  if(!key) throw new Error('API 키 없음 — 우측 상단에 Finnhub 무료 키를 입력하세요');
   const now=Math.floor(Date.now()/1000);
   const months=RANGE_MO[CR]||6;
-  const from=now-months*30*24*3600;
-  const url=`https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${now}&token=${key}`;
-  const text=await tryFetch(url,12000);
-  const json=JSON.parse(text);
-  if(json.s==='no_data'||!json.c||json.c.length<20) throw new Error(`종목을 찾을 수 없거나 데이터 부족 (${ticker})`);
-  const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
-  json.t.forEach((ts,i)=>{
-    rows.dates.push(new Date(ts*1000).toISOString().split('T')[0]);
-    rows.open.push(json.o[i]);rows.high.push(json.h[i]);
-    rows.low.push(json.l[i]);rows.close.push(json.c[i]);
-    rows.volume.push(json.v[i]||0);
-  });
+  const chunkMo=3, chunks=Math.ceil(months/chunkMo);
+  const SEC=chunkMo*31*24*3600;
+  const seen=new Set();
+  const merged={dates:[],open:[],high:[],low:[],close:[],volume:[]};
+  for(let i=chunks-1;i>=0;i--){
+    const from=now-(i+1)*SEC, to=now-i*SEC;
+    try{
+      const json=JSON.parse(await tryFetch(`https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}&token=${key}`,12000));
+      if(json.s==='ok'&&json.c){
+        json.t.forEach((ts,j)=>{
+          const d=new Date(ts*1000).toISOString().split('T')[0];
+          if(seen.has(d))return; seen.add(d);
+          merged.dates.push(d);merged.open.push(json.o[j]);merged.high.push(json.h[j]);
+          merged.low.push(json.l[j]);merged.close.push(json.c[j]);merged.volume.push(json.v[j]||0);
+        });
+      }
+    }catch{}
+  }
+  const sorted=merged.dates.map((d,i)=>({d,o:merged.open[i],h:merged.high[i],l:merged.low[i],c:merged.close[i],v:merged.volume[i]})).sort((a,b)=>a.d.localeCompare(b.d));
+  if(sorted.length<20) throw new Error(`종목을 찾을 수 없거나 데이터 부족 (${ticker})`);
+  const rows={dates:sorted.map(x=>x.d),open:sorted.map(x=>x.o),high:sorted.map(x=>x.h),low:sorted.map(x=>x.l),close:sorted.map(x=>x.c),volume:sorted.map(x=>x.v)};
   const last=rows.close[rows.close.length-1],prev=rows.close[rows.close.length-2]||last;
-  // 실시간 시세 보완
   let cp=last,pc=prev;
   try{
     const qt=JSON.parse(await tryFetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${key}`,5000));
@@ -234,11 +241,49 @@ async function getFinnhub(ticker){
   }catch{}
   return{rows,ticker,name:ticker,currency:'USD',currentPrice:cp,previousClose:pc};
 }
+// ══ DATA: 금융위원회 공공데이터 API (한국주식 폴백) ══
+const KRX_KEY='4WWvYFc9M0KzxFNuYoJVQ2q46PDlCCMNpcDiCvYni%2FUbRk51E2HWpyb%2BdNQqqgbm05rnqPI43CC90B2qk%2BRtTQ%3D%3D';
+async function getKrxPublicApi(ticker){
+  const code=ticker.replace(/\.(KS|KQ)$/,'');
+  const now=new Date(), cutoff=new Date();
+  cutoff.setMonth(cutoff.getMonth()-(RANGE_MO[CR]||6));
+  const toDate=now.toISOString().split('T')[0].replace(/-/g,'');
+  const fromDate=cutoff.toISOString().split('T')[0].replace(/-/g,'');
+  const base='https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo';
+  let allItems=[],pageNo=1,totalCount=null;
+  while(true){
+    const url=`${base}?serviceKey=${KRX_KEY}&numOfRows=100&pageNo=${pageNo}&resultType=json&likeSrtnCd=${code}&beginBasDt=${fromDate}&endBasDt=${toDate}`;
+    const json=JSON.parse(await tryFetch(url,15000));
+    const body=json?.response?.body;
+    if(!body) throw new Error(`공공데이터 API 응답 오류 (${code})`);
+    if(totalCount===null) totalCount=+body.totalCount;
+    const items=body.items?.item;
+    if(!items) break;
+    const arr=Array.isArray(items)?items:[items];
+    allItems.push(...arr);
+    if(allItems.length>=totalCount) break;
+    pageNo++;
+  }
+  if(allItems.length<20) throw new Error(`데이터 부족 — 종목코드 확인 (${code})`);
+  allItems.sort((a,b)=>a.basDt.localeCompare(b.basDt));
+  const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
+  allItems.forEach(item=>{
+    const d=item.basDt;
+    rows.dates.push(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`);
+    rows.open.push(+item.mkp);rows.high.push(+item.hipr);
+    rows.low.push(+item.lopr);rows.close.push(+item.clpr);
+    rows.volume.push(+item.trqu);
+  });
+  const last=rows.close[rows.close.length-1],prev=rows.close[rows.close.length-2]||last;
+  const name=allItems[allItems.length-1].itmsNm||ticker;
+  return{rows,ticker,name,currency:'KRW',currentPrice:last,previousClose:prev};
+}
 // ══ LOAD ══
 async function load(ticker){
   CT=ticker;
-  const hasWorker=!!getWorkerUrl();
-  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Yahoo Finance 요청 중...</div><div class="pg" id="p2">○ Finnhub (폴백)</div></div>');
+  const isKR=ticker.endsWith('.KS')||ticker.endsWith('.KQ');
+  const fallbackLabel=isKR?'공공데이터 API (한국주식)':'Finnhub';
+  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Yahoo Finance 요청 중...</div><div class="pg" id="p2">○ '+fallbackLabel+' (폴백)</div></div>');
   document.getElementById('mc').innerHTML='';document.getElementById('rc').innerHTML='';document.getElementById('dc').innerHTML='';
   document.getElementById('panel').innerHTML='<div class="ep"><div class="sp"></div><div class="txt" style="margin-top:8px">분석 중...</div></div>';
   try{
@@ -248,8 +293,8 @@ async function load(ticker){
       const p1=document.getElementById('p1');
       if(p1){p1.className='pg';p1.textContent='✗ Yahoo 실패';}
       const p2=document.getElementById('p2');
-      if(p2){p2.className='pg act';p2.textContent='⟳ Finnhub 요청 중...';}
-      result=await getFinnhub(ticker);
+      if(p2){p2.className='pg act';p2.textContent='⟳ '+fallbackLabel+' 요청 중...';}
+      result=isKR?await getKrxPublicApi(ticker):await getFinnhub(ticker);
     }
     if(!result) throw new Error('데이터를 가져오지 못했습니다');
     const {rows,...meta}=result;
@@ -257,7 +302,7 @@ async function load(ticker){
     process();
   }catch(e){
     const msg=e.message||'데이터를 불러오지 못했습니다';
-    setOv('<div class="eb"><div style="font-size:20px;margin-bottom:8px">⚠</div><div>'+msg+'</div><small>우측 상단에 <b>Finnhub 무료 API 키</b>를 입력하거나 Worker URL을 설정하세요</small></div>');
+    setOv('<div class="eb"><div style="font-size:20px;margin-bottom:8px">⚠</div><div>'+msg+'</div><small>'+( isKR?'Yahoo Finance Worker URL 또는 공공데이터 API를 확인하세요':'우측 상단에 <b>Finnhub API 키</b>를 입력하세요')+'</small></div>');
     document.getElementById('panel').innerHTML='<div class="ep"><div class="ico">❌</div><div class="txt">불러오기 실패</div></div>';
   }
 }
