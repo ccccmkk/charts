@@ -85,6 +85,7 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgb
 .ep .ico{font-size:32px;opacity:.15}
 .ep .txt{font-size:10px;color:var(--t3);text-align:center;line-height:1.7}
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px}
+.go-btn{background:var(--bl);border:none;color:#fff;border-radius:4px;padding:5px 10px;cursor:pointer;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0;transition:opacity .15s}.go-btn:hover{opacity:.8}
 .in{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700}
 .ip{font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:700}
 .ich{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:2px 6px;border-radius:3px}
@@ -101,7 +102,8 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgb
   <div class="logo">▸ SIGNAL<span>LAB</span></div>
   <div class="sw">
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#3d5a7c" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-    <input id="ti" placeholder="티커 입력 후 Enter (AAPL, TSLA, 005930.KS)">
+    <input id="ti" placeholder="티커 입력 (AAPL, TSLA, 005930.KS)" enterkeyhint="search">
+    <button class="go-btn" onclick="const t=document.getElementById('ti').value.trim().toUpperCase();if(t)load(t)">→</button>
   </div>
   <div class="hints">
     <span class="h" onclick="qs('AAPL')">AAPL</span>
@@ -414,7 +416,9 @@ function drawPanel(){
   const lr=R[n-1],lbu=B.up[n-1],lbl=B.lo[n-1],lbm=B.mid[n-1],lm=M.ml[n-1],ls=M.sl[n-1],l50=s50[n-1],l200=s200[n-1],l20=s20[n-1];
   const cats={sb:{l:'강한 매수',i:'▲'},pb:{l:'분할 매수',i:'△'},ss2:{l:'강한 매도',i:'▼'},ps2:{l:'분할 매도',i:'▽'},dg:{l:'위험 신호',i:'⚠'},op:{l:'기회 신호',i:'◆'}};
   const cnt={};AS.forEach(s=>{cnt[s.category]=(cnt[s.category]||0)+1;});
-  const bs=(cnt.sb||0)*3+(cnt.pb||0),ss=(cnt.ss2||0)*3+(cnt.ps2||0),ds=cnt.dg||0;
+  const recentIdx=SD.dates.length-15;
+  const rcnt={};AS.filter(s=>s.i>=recentIdx).forEach(s=>{rcnt[s.category]=(rcnt[s.category]||0)+1;});
+  const bs=(rcnt.sb||0)*3+(rcnt.pb||0),ss=(rcnt.ss2||0)*3+(rcnt.ps2||0),ds=rcnt.dg||0;
   let vd,vc,st,tg;
   if(ds>=2){vd='⚠ 위험 — 관망 또는 손절 검토';vc='var(--or)';st='복수의 위험 신호가 감지됩니다. 현금 비중 확보를 권장합니다.';tg=['현금확보','관망','손절검토'];}
   else if(bs>ss+3){vd='🟢 매수 우세 — 단계적 진입';vc='var(--gn)';st='다수의 매수 시그널이 감지됩니다. 3회 이상 분할 매수를 권장합니다.';tg=['분할매수','BB하단','RSI확인'];}
