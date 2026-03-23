@@ -206,7 +206,7 @@ async function testApi(){
   btn.textContent='테스트';btn.disabled=false;
 }
 function saveKey(v){localStorage.setItem('fhKey',v.trim());}
-function getWorkerUrl(){return document.getElementById('wk').value.trim()||'';}
+function getWorkerUrl(){return document.getElementById('wk').value.trim()||'https://yahoo-proxy.cm99i.workers.dev';}
 function saveWorkerUrl(v){localStorage.setItem('cfWorkerUrl',v.trim());}
 window.addEventListener('load',()=>{
   const k=localStorage.getItem('fhKey')||DEFAULT_FH_KEY;document.getElementById('ak').value=k;
@@ -287,6 +287,33 @@ async function getYahoo(ticker){
   }return null;
 }
 
+// ══ DATA: Stooq (무료, API키 불필요) ══
+async function getStooq(ticker){
+  const isKR=ticker.endsWith('.KS')||ticker.endsWith('.KQ');
+  let sym=ticker.toLowerCase();
+  if(isKR){sym=sym.replace(/\.(ks|kq)$/,'.kr');}
+  else if(!sym.includes('.')){sym=sym+'.us';}
+  const now=new Date(),cutoff=new Date();
+  cutoff.setMonth(cutoff.getMonth()-(RANGE_MO[CR]||6));
+  const d2=now.toISOString().split('T')[0].replace(/-/g,'');
+  const d1=cutoff.toISOString().split('T')[0].replace(/-/g,'');
+  const text=await tryFetch(`https://stooq.com/q/d/l/?s=${sym}&d1=${d1}&d2=${d2}&i=d`,12000);
+  const lines=text.trim().split('\n');
+  if(lines.length<3)return null;
+  const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
+  for(let i=1;i<lines.length;i++){
+    const p=lines[i].split(',');
+    if(p.length<5||!p[0]||p[4]==='N/D'||p[4]==='null')continue;
+    rows.dates.push(p[0]);rows.open.push(+p[1]);rows.high.push(+p[2]);
+    rows.low.push(+p[3]);rows.close.push(+p[4]);rows.volume.push(+(p[5]||0));
+  }
+  if(rows.close.length<20)return null;
+  rows.dates.reverse();rows.open.reverse();rows.high.reverse();
+  rows.low.reverse();rows.close.reverse();rows.volume.reverse();
+  const last=rows.close[rows.close.length-1],prev=rows.close[rows.close.length-2]||last;
+  return{rows,ticker,name:ticker,currency:isKR?'KRW':'USD',currentPrice:last,previousClose:prev};
+}
+
 // ══ DATA: Finnhub ══
 async function getFinnhub(ticker){
   const key=getKey();
@@ -362,7 +389,7 @@ async function load(ticker){
   CT=ticker;
   const isKR=ticker.endsWith('.KS')||ticker.endsWith('.KQ');
   const fallbackLabel=isKR?'공공데이터 API (한국주식)':'Finnhub';
-  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Yahoo Finance 요청 중...</div><div class="pg" id="p2">○ '+fallbackLabel+' (폴백)</div></div>');
+  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Yahoo Finance 요청 중...</div><div class="pg" id="p2">○ Stooq (폴백1)</div><div class="pg" id="p3">○ '+fallbackLabel+' (폴백2)</div></div>');
   document.getElementById('mc').innerHTML='';document.getElementById('rc').innerHTML='';document.getElementById('dc').innerHTML='';
   document.getElementById('panel').innerHTML='<div class="ep"><div class="sp"></div><div class="txt" style="margin-top:8px">분석 중...</div></div>';
   try{
@@ -370,7 +397,12 @@ async function load(ticker){
     try{result=await getYahooViaWorker(ticker)||await getYahoo(ticker);}catch{}
     if(!result){
       const p1=document.getElementById('p1');if(p1){p1.className='pg';p1.textContent='✗ Yahoo 실패';}
-      const p2=document.getElementById('p2');if(p2){p2.className='pg act';p2.textContent='⟳ '+fallbackLabel+' 요청 중...';}
+      const p2=document.getElementById('p2');if(p2){p2.className='pg act';p2.textContent='⟳ Stooq 요청 중...';}
+      try{result=await getStooq(ticker);}catch{}
+    }
+    if(!result){
+      const p2=document.getElementById('p2');if(p2){p2.className='pg';p2.textContent='✗ Stooq 실패';}
+      const p3=document.getElementById('p3');if(p3){p3.className='pg act';p3.textContent='⟳ '+fallbackLabel+' 요청 중...';}
       result=isKR?await getKrxPublicApi(ticker):await getFinnhub(ticker);
     }
     if(!result)throw new Error('데이터를 가져오지 못했습니다');
