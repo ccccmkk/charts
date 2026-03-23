@@ -90,6 +90,10 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgb
 .ich{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:2px 6px;border-radius:3px}
 .up{color:var(--gn);background:rgba(0,230,118,.1)}.dn{color:var(--rd);background:rgba(255,23,68,.1)}
 .im{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--t2)}
+.ak-wrap{display:flex;align-items:center;gap:5px;background:var(--sf);border:1px solid var(--br);border-radius:6px;padding:0 8px;transition:all .2s}.ak-wrap:focus-within{border-color:var(--bl);box-shadow:0 0 12px rgba(41,121,255,.2)}#ak{background:none;border:none;outline:none;color:var(--t);font-family:'JetBrains Mono',monospace;font-size:10px;width:140px;padding:7px 0}#ak::placeholder{color:var(--t3)}.ak-link{font-size:9px;color:var(--bl);white-space:nowrap;text-decoration:none;opacity:.8}.ak-link:hover{opacity:1}
+.prc{background:var(--s2);border:1px solid var(--br);border-radius:6px;overflow:hidden}.prr{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.03)}.prr:last-child{border-bottom:none}.prr.cur{background:rgba(41,121,255,.08);border-left:2px solid var(--bl)}.prd{width:6px;height:6px;border-radius:50%;flex-shrink:0}.prlb{font-size:8px;color:var(--t3);font-weight:600;width:80px;font-family:'JetBrains Mono',monospace;letter-spacing:.3px;line-height:1.3}.prv{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;flex:1}.prpct{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;min-width:44px;text-align:right}
+@media(max-width:768px){body{height:auto;overflow-y:auto;overflow-x:hidden}.layout{flex-direction:column;height:auto}.ca{border-right:none;border-bottom:1px solid var(--br)}.panel{width:100%;max-height:none}#rc,#dc{height:70px}.hints{display:none}.ak-wrap+.ak-wrap{display:none}header{gap:6px;padding:8px 10px}.sw{max-width:none;flex:1 1 160px}.ig{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:480px){.rbs,.ibs{display:none}}
 </style>
 </head>
 <body>
@@ -116,6 +120,16 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgb
     <button class="ib on" data-i="bb" onclick="ti2('bb')">BB밴드</button>
     <button class="ib on" data-i="ma" onclick="ti2('ma')">이동평균</button>
   </div>
+  <div class="ak-wrap">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3d5a7c" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    <input id="ak" placeholder="Alpha Vantage API Key" oninput="saveKey(this.value)">
+    <a href="https://www.alphavantage.co/support/#api-key" target="_blank" class="ak-link">무료발급↗</a>
+  </div>
+  <div class="ak-wrap">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3d5a7c" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+    <input id="wk" placeholder="Cloudflare Worker URL (Yahoo용)" oninput="saveWorkerUrl(this.value)" style="width:180px">
+    <a href="https://workers.cloudflare.com" target="_blank" class="ak-link">설정↗</a>
+  </div>
 </header>
 <div class="layout">
   <div class="ca">
@@ -134,103 +148,104 @@ header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgb
 </div>
 <script>
 let CR='6mo',CT='',sB=true,sM=true,SD=null,AS=[];
+const RANGE_MO={'3mo':3,'6mo':6,'1y':12,'2y':24};
+function getKey(){return document.getElementById('ak').value.trim()||'VO9JTUFF4F1H5EF5';}
+function saveKey(v){localStorage.setItem('avKey',v.trim());}
+function getWorkerUrl(){return document.getElementById('wk').value.trim()||'';}
+function saveWorkerUrl(v){localStorage.setItem('cfWorkerUrl',v.trim());}
+window.addEventListener('load',()=>{
+  const k=localStorage.getItem('avKey')||'VO9JTUFF4F1H5EF5';document.getElementById('ak').value=k;
+  const w=localStorage.getItem('cfWorkerUrl');if(w)document.getElementById('wk').value=w;
+});
 function setR(r){CR=r;document.querySelectorAll('.rb').forEach((b,i)=>b.classList.toggle('active',['3mo','6mo','1y','2y'][i]===r));if(CT)load(CT);}
 function ti2(i){if(i==='bb')sB=!sB;else sM=!sM;document.querySelector('.ib[data-i="'+i+'"]').classList.toggle('on',i==='bb'?sB:sM);if(SD)drawCharts();}
 function qs(t){document.getElementById('ti').value=t;load(t);}
 document.getElementById('ti').addEventListener('keydown',e=>{if(e.key==='Enter'){const t=e.target.value.trim().toUpperCase();if(t)load(t);}});
-// ══ DATA: Yahoo Finance via allorigins.win/raw (primary) ══
+// ══ FETCH HELPER ══
 async function tryFetch(url, ms=10000){
   const c=new AbortController(), id=setTimeout(()=>c.abort(),ms);
   try{const r=await fetch(url,{signal:c.signal});clearTimeout(id);if(!r.ok)throw new Error(r.status);return await r.text();}
   catch(e){clearTimeout(id);throw e;}
 }
+// ══ DATA: Yahoo Finance 파싱 공통 ══
+function parseYahooJson(json){
+  if(!json?.chart?.result?.[0]) return null;
+  const res=json.chart.result[0],m=res.meta,q=res.indicators.quote[0],ts=res.timestamp;
+  const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
+  ts.forEach((t,i)=>{
+    if(q.close[i]==null||q.open[i]==null)return;
+    rows.dates.push(new Date(t*1000).toISOString().split('T')[0]);
+    rows.open.push(q.open[i]);rows.high.push(q.high[i]);
+    rows.low.push(q.low[i]);rows.close.push(q.close[i]);
+    rows.volume.push(q.volume[i]||0);
+  });
+  if(rows.close.length<20) return null;
+  return{rows,ticker:m.symbol,name:m.shortName||m.longName||m.symbol,
+    currency:m.currency||'USD',
+    currentPrice:m.regularMarketPrice||rows.close[rows.close.length-1],
+    previousClose:m.chartPreviousClose||rows.close[rows.close.length-2]};
+}
+// ══ DATA: Yahoo Finance via Cloudflare Worker (1차) ══
+async function getYahooViaWorker(ticker){
+  const base=getWorkerUrl().replace(/\/$/,'');
+  if(!base) return null;
+  const text=await tryFetch(`${base}/${ticker}?range=${CR}`,12000);
+  return parseYahooJson(JSON.parse(text));
+}
+// ══ DATA: Yahoo Finance 직접 (2차, 간혹 CORS 허용) ══
 async function getYahoo(ticker){
-  const base = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=${CR}&includePrePost=false`;
-  const q2   = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=${CR}&includePrePost=false`;
-  const enc  = encodeURIComponent(base);
-  const enc2 = encodeURIComponent(q2);
-  const attempts = [
-    ['allorigins/raw q1', `https://api.allorigins.win/raw?url=${enc}`],
-    ['allorigins/raw q2', `https://api.allorigins.win/raw?url=${enc2}`],
-    ['allorigins/get q1', `https://api.allorigins.win/get?url=${enc}`],
-    ['codetabs q1',       `https://api.codetabs.com/v1/proxy?quest=${enc}`],
-    ['corsproxy q1',      `https://corsproxy.io/?${enc}`],
-  ];
-  for(const [label, url] of attempts){
+  for(const host of ['query1','query2']){
+    const url=`https://${host}.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=${CR}&includePrePost=false`;
     try{
-      const text = await tryFetch(url, 12000);
-      let json;
-      try{const w=JSON.parse(text); json = w.contents ? JSON.parse(w.contents) : w;}
-      catch{continue;}
-      if(!json?.chart?.result?.[0]) continue;
-      const res=json.chart.result[0], m=res.meta, q=res.indicators.quote[0], ts=res.timestamp;
-      const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
-      ts.forEach((t,i)=>{
-        if(q.close[i]==null||q.open[i]==null)return;
-        rows.dates.push(new Date(t*1000).toISOString().split('T')[0]);
-        rows.open.push(q.open[i]);rows.high.push(q.high[i]);
-        rows.low.push(q.low[i]);rows.close.push(q.close[i]);
-        rows.volume.push(q.volume[i]||0);
-      });
-      if(rows.close.length<20) continue;
-      return{rows, ticker:m.symbol, name:m.shortName||m.longName||m.symbol,
-        currency:m.currency||'USD',
-        currentPrice:m.regularMarketPrice||rows.close[rows.close.length-1],
-        previousClose:m.chartPreviousClose||rows.close[rows.close.length-2]};
+      const result=parseYahooJson(JSON.parse(await tryFetch(url,8000)));
+      if(result) return result;
     }catch{continue;}
   }
   return null;
 }
-// ══ DATA: Claude API + web_search (fallback) ══
-async function getViaClaude(ticker){
-  const months={'3mo':3,'6mo':6,'1y':12,'2y':24}[CR]||6;
-  const today=new Date().toISOString().split('T')[0];
-  const prompt=`${ticker} 주식의 최근 ${months}개월 일별 OHLCV 데이터를 웹에서 찾아서 아래 JSON 형식으로만 반환하세요. 마크다운이나 다른 텍스트 없이 순수 JSON만 반환하세요.
-오늘: ${today}
-{"name":"종목명","currency":"USD또는KRW","data":[{"date":"YYYY-MM-DD","open":숫자,"high":숫자,"low":숫자,"close":숫자,"volume":숫자}]}
-data는 날짜 오름차순, 최소 60개 거래일 포함. 숫자만, 문자열 아님. JSON만 반환, 다른 텍스트 절대 금지.`;
-  const res = await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      model:'claude-sonnet-4-20250514',
-      max_tokens:8000,
-      tools:[{type:'web_search_20250305',name:'web_search'}],
-      messages:[{role:'user',content:prompt}]
-    })
+// ══ DATA: Alpha Vantage (2차, 무료 CORS 지원) ══
+async function getAlphaVantage(ticker){
+  const key=getKey();
+  if(!key) throw new Error('API 키 없음 — 우측 상단에 Alpha Vantage 무료 키를 입력하세요');
+  const avTicker=ticker.endsWith('.KS')?ticker.replace('.KS','.KSC'):ticker;
+  const size=CR==='1y'||CR==='2y'?'full':'compact';
+  const url=`https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${avTicker}&outputsize=${size}&apikey=${key}`;
+  const text=await tryFetch(url,15000);
+  const json=JSON.parse(text);
+  if(json['Note']||json['Information']) throw new Error('API 한도 초과 — 1분 후 재시도하거나 새 키를 발급받으세요');
+  const ts=json['Time Series (Daily)'];
+  if(!ts) throw new Error(`종목을 찾을 수 없습니다 (${avTicker})`);
+  const cutoff=new Date();
+  cutoff.setMonth(cutoff.getMonth()-(RANGE_MO[CR]||6));
+  const cutoffStr=cutoff.toISOString().split('T')[0];
+  const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
+  Object.entries(ts).sort(([a],[b])=>a.localeCompare(b)).forEach(([date,d])=>{
+    if(date<cutoffStr)return;
+    rows.dates.push(date);
+    rows.open.push(+d['1. open']);rows.high.push(+d['2. high']);
+    rows.low.push(+d['3. low']);rows.close.push(+d['4. close']);
+    rows.volume.push(+d['5. volume']);
   });
-  if(!res.ok) throw new Error('Claude API '+res.status);
-  const data=await res.json();
-  const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-  const m=text.replace(/```json|```/g,'').match(/\{[\s\S]*\}/);
-  if(!m) throw new Error('JSON 파싱 실패');
-  const p=JSON.parse(m[0]);
-  if(!p.data||p.data.length<10) throw new Error('데이터 부족');
-  p.data.sort((a,b)=>a.date.localeCompare(b.date));
-  const rows={dates:p.data.map(d=>d.date),open:p.data.map(d=>+d.open),
-    high:p.data.map(d=>+d.high),low:p.data.map(d=>+d.low),
-    close:p.data.map(d=>+d.close),volume:p.data.map(d=>+d.volume)};
-  return{rows, ticker, name:p.name||ticker, currency:p.currency||'USD',
-    currentPrice:rows.close[rows.close.length-1],
-    previousClose:rows.close[rows.close.length-2]||rows.close[rows.close.length-1]};
+  if(rows.close.length<20) throw new Error('데이터 부족 (20일 미만)');
+  const last=rows.close[rows.close.length-1],prev=rows.close[rows.close.length-2]||last;
+  return{rows,ticker,name:ticker,currency:ticker.endsWith('.KS')?'KRW':'USD',currentPrice:last,previousClose:prev};
 }
 // ══ LOAD ══
 async function load(ticker){
   CT=ticker;
-  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Yahoo Finance 직접 연결 시도</div><div class="pg" id="p2">○ Claude AI 검색 (폴백)</div></div>');
+  const hasWorker=!!getWorkerUrl();
+  setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog">'+(hasWorker?'<div class="pg act" id="p1">⟳ Yahoo Finance 요청 중...</div><div class="pg" id="p2">○ Alpha Vantage (폴백)</div>':'<div class="pg act" id="p1">⟳ Alpha Vantage 요청 중...</div>')+'</div>');
   document.getElementById('mc').innerHTML='';document.getElementById('rc').innerHTML='';document.getElementById('dc').innerHTML='';
   document.getElementById('panel').innerHTML='<div class="ep"><div class="sp"></div><div class="txt" style="margin-top:8px">분석 중...</div></div>';
   try{
     let result=null;
-    // 1차: Yahoo Finance 직접
-    try{result=await getYahoo(ticker);}catch{}
-    // 2차: Claude API
+    try{result=await getYahooViaWorker(ticker)||await getYahoo(ticker);}catch{}
     if(!result){
       const p1=document.getElementById('p1');
-      if(p1){p1.className='pg';p1.textContent='✗ Yahoo 연결 실패';}
+      if(p1&&hasWorker){p1.className='pg';p1.textContent='✗ Yahoo 실패';}
       const p2=document.getElementById('p2');
-      if(p2){p2.className='pg act';p2.textContent='⟳ Claude AI 웹검색 중...';}
-      result=await getViaClaude(ticker);
+      if(p2){p2.className='pg act';p2.textContent='⟳ Alpha Vantage 요청 중...';}
+      result=await getAlphaVantage(ticker);
     }
     if(!result) throw new Error('데이터를 가져오지 못했습니다');
     const {rows,...meta}=result;
@@ -238,7 +253,7 @@ async function load(ticker){
     process();
   }catch(e){
     const msg=e.message||'데이터를 불러오지 못했습니다';
-    setOv('<div class="eb"><div style="font-size:20px;margin-bottom:8px">⚠</div><div>'+msg+'</div><small>미국: AAPL · 한국: 005930.KS</small></div>');
+    setOv('<div class="eb"><div style="font-size:20px;margin-bottom:8px">⚠</div><div>'+msg+'</div><small>우측 상단에 <b>Alpha Vantage 무료 API 키</b>를 입력하세요</small></div>');
     document.getElementById('panel').innerHTML='<div class="ep"><div class="ico">❌</div><div class="txt">불러오기 실패</div></div>';
   }
 }
@@ -289,18 +304,19 @@ function detectSig(d,inds){
     if(m&&ms&&mp&&msp&&mp<msp&&m>ms&&r&&r<50)add(i,'sb','MACD 상향 돌파',`MACD(${m.toFixed(3)})가 시그널 상향 돌파.`,3,['MACD','RSI']);
     if(bl&&l[i-1]<bl*1.005&&c[i]>op[i]&&vr>1.2)add(i,'sb','BB 하단 반등',`BB 하단(${bl.toFixed(0)}) 터치 후 양봉. 거래량 +${((vr-1)*100).toFixed(0)}%.`,3,['BB','VOL']);
     // 분할매수
-    if(r&&rp&&r>=35&&r<=45&&r>rp)add(i,'pb','RSI 저가권 반등',`RSI(${r.toFixed(1)}) 저가 구간 반등. 분할매수 구간.`,2,['RSI']);
-    if(bl&&p<bl*1.02&&p>bl)add(i,'pb','BB 하단 근접',`현재가 BB 하단(${bl.toFixed(0)}) 근접. 1차 분할매수.`,2,['BB']);
+    if(r&&rp&&rp<35&&r>=35&&r<50)add(i,'pb','RSI 과매도 탈출',`RSI ${rp.toFixed(1)}→${r.toFixed(1)}, 30선 상향 돌파. 분할매수 시작.`,2,['RSI']);
+    if(bl&&B.lo[i-1]&&p<bl*1.02&&p>bl&&pp>=B.lo[i-1]*1.02)add(i,'pb','BB 하단 첫 진입',`BB 하단(${bl.toFixed(0)}) 진입. 1차 분할매수 구간.`,2,['BB']);
     if(k&&kp&&k<25&&k>kp)add(i,'pb','스토캐스틱 과매도 반등',`스토캐스틱 K(${k.toFixed(1)}) 반등. 단기 저점.`,2,['Stoch']);
-    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&c[i]>op[i])add(i,'pb','MA20 지지',`MA20(${s20[i].toFixed(0)}) 근처 양봉.`,1,['MA20']);
+    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&p>=s20[i]&&c[i]>op[i])add(i,'pb','MA20 지지',`MA20(${s20[i].toFixed(0)}) 지지 후 양봉.`,1,['MA20']);
+    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&p<=s20[i]&&c[i]<op[i])add(i,'ps2','MA20 저항',`MA20(${s20[i].toFixed(0)}) 저항 후 음봉.`,1,['MA20']);
     // 강매도
     if(r&&rp&&r>65&&r<rp&&rp>70)add(i,'ss2','RSI 과매수 하락',`RSI ${rp.toFixed(1)}→${r.toFixed(1)} 반락. 강한 매도 신호.`,3,['RSI']);
     if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]>=s200[i-1]&&s50[i]<s200[i])add(i,'ss2','데스 크로스',`MA50 MA200 하향 돌파. 중장기 하락 전환.`,3,['MA50','MA200']);
     if(m&&ms&&mp&&msp&&mp>msp&&m<ms&&r&&r>50)add(i,'ss2','MACD 하향 돌파',`MACD(${m.toFixed(3)}) 시그널 하향 돌파.`,3,['MACD']);
     if(bu&&h[i-1]>bu&&c[i]<op[i])add(i,'ss2','BB 상단 후 음봉',`BB 상단(${bu.toFixed(0)}) 돌파 후 음봉.`,3,['BB']);
     // 분할매도
-    if(r&&r>=65&&r<=75)add(i,'ps2','RSI 고가권 익절',`RSI(${r.toFixed(1)}) 고가 구간. 일부 익절 고려.`,2,['RSI']);
-    if(bu&&p>bu*.98&&p<bu)add(i,'ps2','BB 상단 근접 익절',`BB 상단(${bu.toFixed(0)}) 근접. 분할 익절.`,2,['BB']);
+    if(r&&rp&&rp<65&&r>=65&&r<80)add(i,'ps2','RSI 과매수 진입',`RSI ${rp.toFixed(1)}→${r.toFixed(1)}, 65선 상향. 일부 익절 고려.`,2,['RSI']);
+    if(bu&&B.up[i-1]&&p>bu*.98&&p<bu&&pp<=B.up[i-1]*.98)add(i,'ps2','BB 상단 첫 진입',`BB 상단(${bu.toFixed(0)}) 도달. 분할 익절 구간.`,2,['BB']);
     if(k&&kp&&k>75&&k<kp)add(i,'ps2','스토캐스틱 과매수 반락',`스토캐스틱 K(${k.toFixed(1)}) 반락. 단기 고점.`,2,['Stoch']);
     // 위험
     if(r&&r>80)add(i,'dg','RSI 극단 과매수 ⚠',`RSI ${r.toFixed(1)} 극도 과매수. 신규 매수 위험.`,3,['RSI']);
@@ -315,7 +331,7 @@ function detectSig(d,inds){
   CP.forEach(({i,n:nm,d:dr})=>{if(i>=c.length-20){
     const cat=dr==='b'?'pb':dr==='s'?'ps2':'op';
     add(i,cat,'캔들: '+nm,nm+'패턴. '+(dr==='b'?'단기 상승 가능성.':dr==='s'?'단기 하락 가능성.':'방향 전환 신호.'),1,['캔들']);}});
-  return sigs.sort((a,b)=>b.i-a.i);}
+  const dk={};return sigs.sort((a,b)=>b.i-a.i).filter(s=>{const k=s.category+'_'+Math.floor(s.i/4);return dk[k]?false:(dk[k]=1,true);});}
 // ══ PROCESS ══
 function process(){
   const{close,high,low,open,volume}=SD;
@@ -340,7 +356,7 @@ function drawCharts(){
     return{type:'scatter',mode:'markers',name:cNm[cat],x:ss.map(s=>s.date),
       y:ss.map(s=>ab?high[s.i]*1.014:low[s.i]*0.986),
       marker:{symbol:c.sym,color:c.col,size:c.sz,line:{width:1.5,color:c.col}},
-      text:ss.map(s=>`<b>${s.name}</b><br>${s.desc}<br><i style='opacity:.6'>지표: ${s.ind.join(', ')}</i>`),
+      text:ss.map(s=>`<b>${s.name}</b><br>📍 ${SD.currency==='KRW'?Math.round(s.price).toLocaleString('ko-KR')+'원':'$'+s.price.toFixed(2)}<br>${s.desc}<br><i style='opacity:.6'>지표: ${s.ind.join(', ')}</i>`),
       hovertemplate:'%{text}<extra></extra>',showlegend:true};});
   const tr=[{type:'candlestick',x:dates,open,high,low,close,
     increasing:{line:{color:'#00e676',width:1.5},fillcolor:'#00e676'},
@@ -380,7 +396,7 @@ function drawCharts(){
     hovermode:'x unified',showlegend:false,hoverlabel:{bgcolor:'rgba(13,21,38,.95)',bordercolor:'#1a2d4a',font:{family:ff,size:10,color:'#cdd9f0'}}},
   {responsive:true,displayModeBar:false});
   const cw=document.querySelector('.cw');
-  document.getElementById('mc').style.height=Math.max(230,cw.clientHeight-180)+'px';}
+  const _mob=window.innerWidth<=768;document.getElementById('mc').style.height=(_mob?Math.max(260,window.innerWidth*.55):Math.max(230,cw.clientHeight-180))+'px';}
 // ══ INFOBAR ══
 function updateInfobar(){
   const{ticker,name,currentPrice:cp,previousClose:pc,currency:cur}=SD;
@@ -394,8 +410,8 @@ function updateInfobar(){
     <span class="im">${AS.length}개 시그널 · ${SD.dates.length}일</span>`;}
 // ══ PANEL ══
 function drawPanel(){
-  const{close,_i:{R,B,s50,s200,M}}=SD,n=close.length;
-  const lr=R[n-1],lbu=B.up[n-1],lbl=B.lo[n-1],lm=M.ml[n-1],ls=M.sl[n-1],l50=s50[n-1],l200=s200[n-1];
+  const{close,_i:{R,B,s20,s50,s200,M}}=SD,n=close.length;
+  const lr=R[n-1],lbu=B.up[n-1],lbl=B.lo[n-1],lbm=B.mid[n-1],lm=M.ml[n-1],ls=M.sl[n-1],l50=s50[n-1],l200=s200[n-1],l20=s20[n-1];
   const cats={sb:{l:'강한 매수',i:'▲'},pb:{l:'분할 매수',i:'△'},ss2:{l:'강한 매도',i:'▼'},ps2:{l:'분할 매도',i:'▽'},dg:{l:'위험 신호',i:'⚠'},op:{l:'기회 신호',i:'◆'}};
   const cnt={};AS.forEach(s=>{cnt[s.category]=(cnt[s.category]||0)+1;});
   const bs=(cnt.sb||0)*3+(cnt.pb||0),ss=(cnt.ss2||0)*3+(cnt.ps2||0),ds=cnt.dg||0;
@@ -412,6 +428,17 @@ function drawPanel(){
   const maS=l50&&l200?(l50>l200?'골든 ✓':'데드 ⚠'):'-';
   const tCls={sb:'tbu',pb:'tpb',ss2:'tse',ps2:'tps',dg:'tdg',op:'top'};
   const tLbl={sb:'강한매수',pb:'분할매수',ss2:'강한매도',ps2:'분할매도',dg:'위험',op:'기회'};
+  const _cp=SD.currentPrice,_kr=SD.currency==='KRW';
+  const _fp=v=>v==null?'-':(_kr?Math.round(v).toLocaleString('ko-KR')+'원':'$'+v.toFixed(2));
+  const _pct=v=>v==null?'':((v/_cp-1)*100>=0?'+':'')+((v/_cp-1)*100).toFixed(1)+'%';
+  const _lvls=[
+    {l:'2차 목표 (BB상단)',v:lbu,c:'#d500f9'},
+    {l:'1차 목표 (BB중심)',v:lbm,c:'#2979ff'},
+    {l:'현재가',v:_cp,c:'var(--t)',cur:true},
+    {l:'1차 매수 (BB하단)',v:lbl,c:'#00e676'},
+    {l:'2차 매수 (추가↓3%)',v:lbl?+(lbl*.97).toFixed(2):null,c:'#69f0ae'},
+    {l:'손절 기준',v:l200?+(l200*.97).toFixed(2):(lbl?+(lbl*.95).toFixed(2):null),c:'#ff9100'},
+  ].filter(x=>x.v!=null).sort((a,b)=>b.v-a.v);
   document.getElementById('panel').innerHTML=`
     <div class="ps"><div class="pt">시그널 요약</div><div class="ss">
       ${Object.entries(cats).map(([k,v])=>`<div class="sr ${k}"><span class="si">${v.i}</span><span class="sl">${v.l}</span><span class="sc">${cnt[k]||0}</span></div>`).join('')}
@@ -421,6 +448,9 @@ function drawPanel(){
       <div class="iv"><div class="ivl">MACD</div><div class="ivn" style="color:${mC}">${lm!=null?lm.toFixed(3):'-'}</div><div class="ivs" style="color:${mC}">${lm==null?'-':lm>(ls||0)?'강세 ↑':'약세 ↓'}</div></div>
       <div class="iv"><div class="ivl">BB 위치</div><div class="ivn">${bbP}</div><div class="ivs" style="color:var(--t2)">0%하단 100%상단</div></div>
       <div class="iv"><div class="ivl">MA 배열</div><div class="ivn" style="color:${maC}">${maS}</div><div class="ivs" style="color:${maC}">MA50 vs MA200</div></div>
+    </div></div>
+    <div class="ps"><div class="pt">매매 가격대</div><div class="prc">
+      ${_lvls.map(x=>`<div class="prr${x.cur?' cur':''}"><div class="prd" style="background:${x.c}"></div><div class="prlb">${x.l}</div><div class="prv" style="color:${x.c}">${_fp(x.v)}</div><div class="prpct" style="color:${x.cur?'var(--t3)':x.v>_cp?'var(--gn)':'var(--rd)'}">${x.cur?'현재':'  '+_pct(x.v)}</div></div>`).join('')}
     </div></div>
     <div class="ps"><div class="pt">전략 추천</div><div class="stb">
       <div class="sv" style="color:${vc}">${vd}</div>
