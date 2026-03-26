@@ -84,7 +84,7 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
 .sr.sb .sl{color:var(--gn)}.sr.pb .sl{color:#10b981}.sr.ss2 .sl{color:var(--rd)}.sr.ps2 .sl{color:#ef4444}.sr.dg .sl{color:var(--or)}.sr.op .sl{color:var(--bl)}
 .sc{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.05);color:var(--t)}
 .ig{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-.iv{background:var(--s2);border:1px solid var(--br);border-radius:6px;padding:6px 8px}
+.iv{background:var(--s2);border:1px solid var(--br);border-radius:6px;padding:6px 8px;cursor:help}
 .ivl{font-size:8px;color:var(--t3);font-weight:700;letter-spacing:1px;text-transform:uppercase;font-family:'JetBrains Mono',monospace}
 .ivn{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;margin-top:2px;color:var(--t)}
 .ivs{font-size:8px;font-weight:500;margin-top:2px;color:var(--t3)}
@@ -1049,6 +1049,8 @@ function drawCharts(){
   }
 
   // ── Signal markers (scatter traces with rich hover) ──
+  const isMob=window.innerWidth<=768;
+  const n_=close.length-1;
   const vm=SD._i.vm||sma(volume,20);
   const catDef={
     sb:{color:'#059669',symbol:'triangle-up',size:10},
@@ -1074,16 +1076,22 @@ function drawCharts(){
       const pct=cp?(entry/cp-1)*100:0;
       const pctStr=`현재가 대비 ${pct>=0?'+':''}${pct.toFixed(1)}%`;
       let extra='';
-      if(isBuy){
-        const stop=(entry*0.97);
-        const target=B.up[s.i]||entry*1.05;
-        extra=`<br>목표가: ${fmt(target)}<br>손절가: ${fmt(stop)}`;
-      } else if(isSell){
-        const stop=(entry*1.03);
-        const target=B.lo[s.i]||entry*0.95;
-        extra=`<br>목표가: ${fmt(target)}<br>손절가: ${fmt(stop)}`;
+      if(!isMob){
+        if(isBuy){
+          // 목표가/손절가는 항상 현재가 기준 (historical BB가 아닌 current)
+          const target=Math.max(B.up[n_]||cp*1.08,cp*1.03);
+          const stop=cp*0.95;
+          extra=`<br>목표가: ${fmt(target)} (+${((target/cp-1)*100).toFixed(1)}%)<br>손절가: ${fmt(stop)} (-5%)`;
+        } else if(isSell){
+          const target=Math.min(B.lo[n_]||cp*0.92,cp*0.97);
+          const stop=cp*1.05;
+          extra=`<br>목표가: ${fmt(target)} (${((target/cp-1)*100).toFixed(1)}%)<br>손절가: ${fmt(stop)} (+5%)`;
+        }
       }
-      const hoverText=`<b>${catName[cat]}</b><br>${s.name}<br>${s.desc}<br>가격: ${fmt(entry)}<br>${pctStr}${extra}`;
+      // 모바일: 간략 텍스트, 데스크톱: 풀 텍스트
+      const hoverText=isMob?
+        `<b>${catName[cat]}</b><br>${s.name}<br>${fmt(entry)}`:
+        `<b>${catName[cat]}</b><br>${s.name}<br>${s.desc}<br>가격: ${fmt(entry)}<br>${pctStr}${extra}`;
       sx.push(dates[s.i]);
       sy.push(isBuy?low[s.i]*0.993:isSell?high[s.i]*1.007:s.price);
       texts.push(hoverText);
@@ -1139,17 +1147,32 @@ function drawCharts(){
     yaxis:{...ax,side:'right',tickformat:',.0f'},
     dragmode:'pan',
     legend:{orientation:'h',x:0,y:1.02,xanchor:'left',bgcolor:'rgba(255,255,255,0)',font:{family:ff,size:8,color:ac}},
-    hovermode:'x unified',
-    hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',font:{family:ff,size:10,color:'#0f172a'}},
+    hovermode:isMob?'closest':'x unified',
+    hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',font:{family:ff,size:isMob?9:10,color:'#0f172a'},namelength:0},
     shapes:[...fibShapes,...vpShapes],
     annotations:[...fibAnno,...vpAnno]};
   Plotly.newPlot('mc',tr,lo2,{responsive:true,displayModeBar:'hover',scrollZoom:true,
     modeBarButtonsToRemove:['toImage','sendDataToCloud','select2d','lasso2d','autoScale2d','toggleSpikelines']});
 
+  // ── Divergence markers ──
+  const{DIV_R,DIV_M}=SD._i;
+  const rBullX=[],rBullY=[],rBearX=[],rBearY=[];
+  if(DIV_R){
+    DIV_R.bull.forEach(d=>{if(R[d.i]!=null){rBullX.push(dates[d.i]);rBullY.push(R[d.i]);}});
+    DIV_R.bear.forEach(d=>{if(R[d.i]!=null){rBearX.push(dates[d.i]);rBearY.push(R[d.i]);}});
+  }
+  const mBullX=[],mBullY=[],mBearX=[],mBearY=[];
+  if(DIV_M){
+    DIV_M.bull.forEach(d=>{if(M.hist[d.i]!=null){mBullX.push(dates[d.i]);mBullY.push(M.hist[d.i]);}});
+    DIV_M.bear.forEach(d=>{if(M.hist[d.i]!=null){mBearX.push(dates[d.i]);mBearY.push(M.hist[d.i]);}});
+  }
+
   Plotly.newPlot('rc',[
     {type:'scatter',mode:'lines',x:dates,y:R,line:{color:'#2563eb',width:1.5},hovertemplate:'RSI: %{y:.1f}<extra></extra>'},
     {type:'scatter',mode:'lines',x:dates,y:Array(dates.length).fill(70),line:{color:'rgba(220,38,38,.35)',width:1,dash:'dot'},showlegend:false,hoverinfo:'skip'},
     {type:'scatter',mode:'lines',x:dates,y:Array(dates.length).fill(30),line:{color:'rgba(5,150,105,.35)',width:1,dash:'dot'},fill:'tonexty',fillcolor:'rgba(5,150,105,.04)',showlegend:false,hoverinfo:'skip'},
+    {type:'scatter',mode:'markers',x:rBullX,y:rBullY,marker:{color:'#059669',symbol:'triangle-up',size:9,line:{color:'#fff',width:1}},hovertemplate:'▲ RSI 강세 다이버전스<extra></extra>',showlegend:false},
+    {type:'scatter',mode:'markers',x:rBearX,y:rBearY,marker:{color:'#dc2626',symbol:'triangle-down',size:9,line:{color:'#fff',width:1}},hovertemplate:'▼ RSI 약세 다이버전스<extra></extra>',showlegend:false},
   ],{paper_bgcolor:bg,plot_bgcolor:bg,margin:{t:2,r:50,b:3,l:6},
     xaxis:{...ax,type:'category',showticklabels:false,rangeslider:{visible:false}},
     yaxis:{...ax,side:'right',range:[0,100],tickvals:[30,50,70]},
@@ -1163,6 +1186,8 @@ function drawCharts(){
     {type:'bar',x:dates,y:M.hist,marker:{color:hc},hovertemplate:'Hist: %{y:.3f}<extra></extra>'},
     {type:'scatter',mode:'lines',x:dates,y:M.ml,line:{color:'#2563eb',width:1.5},hovertemplate:'MACD: %{y:.3f}<extra></extra>'},
     {type:'scatter',mode:'lines',x:dates,y:M.sl,line:{color:'#d97706',width:1.5},hovertemplate:'Sig: %{y:.3f}<extra></extra>'},
+    {type:'scatter',mode:'markers',x:mBullX,y:mBullY,marker:{color:'#059669',symbol:'triangle-up',size:9,line:{color:'#fff',width:1}},hovertemplate:'▲ MACD 강세 다이버전스<extra></extra>',showlegend:false},
+    {type:'scatter',mode:'markers',x:mBearX,y:mBearY,marker:{color:'#dc2626',symbol:'triangle-down',size:9,line:{color:'#fff',width:1}},hovertemplate:'▼ MACD 약세 다이버전스<extra></extra>',showlegend:false},
   ],{paper_bgcolor:bg,plot_bgcolor:bg,margin:{t:2,r:50,b:18,l:6},
     xaxis:{...ax,type:'category',tickangle:-30,nticks:8},yaxis:{...ax,side:'right'},
     annotations:[{x:.01,y:.88,xref:'paper',yref:'paper',text:'MACD',font:{family:ff,size:8,color:ac},showarrow:false}],
@@ -1298,26 +1323,29 @@ function drawPanel(){
   const _cp=SD.currentPrice,_kr=SD.currency==='KRW';
   const _fp=v=>v==null?'-':(_kr?Math.round(v).toLocaleString('ko-KR')+'원':'$'+v.toFixed(2));
   const _pct=v=>v==null?'':((v/_cp-1)*100>=0?'+':'')+((v/_cp-1)*100).toFixed(1)+'%';
+  // 손절은 항상 현재가보다 낮게 (MA200이 현재가 위에 있어도 무조건 현재가 -5% 이하)
+  const rawStop=l200&&l200<_cp?l200*0.97:lbl?lbl*0.95:_cp*0.95;
+  const stopV=Math.min(rawStop,_cp*0.95);
   const _lvls=[
     {l:'2차 목표 (BB상단)',v:lbu,c:'#8b5cf6'},
     {l:'1차 목표 (BB중심)',v:lbm,c:'#3b82f6'},
     {l:'현재가',v:_cp,c:'var(--t)',cur:true},
     {l:'1차 매수 (BB하단)',v:lbl,c:'#059669'},
-    {l:'2차 매수 (추가↓3%)',v:lbl?+(lbl*.97).toFixed(2):null,c:'#10b981'},
-    {l:'손절 기준',v:l200?+(l200*.97).toFixed(2):(lbl?+(lbl*.95).toFixed(2):null),c:'#d97706'},
+    {l:'2차 매수 (추가↓3%)',v:lbl?+(lbl*.97).toFixed(_kr?0:2):null,c:'#10b981'},
+    {l:'손절 기준',v:+stopV.toFixed(_kr?0:2),c:'#d97706'},
   ].filter(x=>x.v!=null).sort((a,b)=>b.v-a.v);
   document.getElementById('panel').innerHTML=`
     <div class="ps"><div class="pt">시그널 요약</div><div class="ss">
       ${Object.entries(cats).map(([k,v])=>`<div class="sr ${k}"><span class="si">${v.i}</span><span class="sl">${v.l}</span><span class="sc">${cnt[k]||0}</span></div>`).join('')}
     </div></div>
     <div class="ps"><div class="pt">현재 지표</div><div class="ig">
-      <div class="iv"><div class="ivl">RSI(14)</div><div class="ivn" style="color:${rC}">${lr!=null?lr.toFixed(1):'-'}</div><div class="ivs">${rS}</div></div>
-      <div class="iv"><div class="ivl">MACD</div><div class="ivn" style="color:${mC}">${lm!=null?lm.toFixed(3):'-'}</div><div class="ivs">${lm==null?'-':lm>(ls||0)?'강세 ↑':'약세 ↓'}</div></div>
-      <div class="iv"><div class="ivl">BB 위치</div><div class="ivn">${bbP}</div><div class="ivs">0%하단 100%상단</div></div>
-      <div class="iv"><div class="ivl">MA 배열</div><div class="ivn" style="color:${maC}">${maS}</div><div class="ivs">MA50 vs MA200</div></div>
-      <div class="iv"><div class="ivl">스퀴즈</div><div class="ivn" style="color:${sqzC};font-size:10px">${sqzS}</div><div class="ivs">Keltner+BB</div></div>
-      <div class="iv"><div class="ivl">AVWAP</div><div class="ivn" style="color:${avC}">${avS}</div><div class="ivs">기간 앵커 대비</div></div>
-      <div class="iv"><div class="ivl">오더플로우</div><div class="ivn" style="color:${ofdC};font-size:10px">${ofdS}</div><div class="ivs">최근 5봉 델타</div></div>
+      <div class="iv" title="RSI(14): 상대강도지수. 30↓ 과매도, 70↑ 과매수. 단, 강한 추세에서는 RSI 80 이상이어도 상승 지속 가능 — 극단 모멘텀 신호로 해석."><div class="ivl">RSI(14)</div><div class="ivn" style="color:${rC}">${lr!=null?lr.toFixed(1):'-'}</div><div class="ivs">${rS}</div></div>
+      <div class="iv" title="MACD: 단기(12)·장기(26) EMA의 차이. 시그널선(9) 상향 돌파 시 강세, 하향 돌파 시 약세. 히스토그램이 양수→음수로 전환되면 모멘텀 약화."><div class="ivl">MACD</div><div class="ivn" style="color:${mC}">${lm!=null?lm.toFixed(3):'-'}</div><div class="ivs">${lm==null?'-':lm>(ls||0)?'강세 ↑':'약세 ↓'}</div></div>
+      <div class="iv" title="BB 위치: 볼린저밴드 내 현재가 위치. 0%=하단(과매도 구간), 100%=상단(과매수 구간). 20 기간 기준 ±2σ."><div class="ivl">BB 위치</div><div class="ivn">${bbP}</div><div class="ivs">0%하단 100%상단</div></div>
+      <div class="iv" title="MA 배열: MA50 vs MA200 비교. 골든크로스(MA50>MA200)=중장기 강세, 데드크로스=중장기 약세. 추세 방향성 판단 기준."><div class="ivl">MA 배열</div><div class="ivn" style="color:${maC}">${maS}</div><div class="ivs">MA50 vs MA200</div></div>
+      <div class="iv" title="스퀴즈: BB가 켈트너 채널(ATR 기반) 내부로 들어오면 '압축 중' — 큰 방향 움직임 직전 신호. 이탈 시 모멘텀 방향으로 '발사'. 옵션 데이터 불필요."><div class="ivl">스퀴즈</div><div class="ivn" style="color:${sqzC};font-size:10px">${sqzS}</div><div class="ivs">Keltner+BB</div></div>
+      <div class="iv" title="AVWAP: 기간 시작점 앵커드 VWAP. 이 선 위면 매수세 우위, 아래면 매도세 우위. % 괴리가 클수록 평균 회귀 가능성 증가."><div class="ivl">AVWAP</div><div class="ivn" style="color:${avC}">${avS}</div><div class="ivs">기간 앵커 대비</div></div>
+      <div class="iv" title="오더플로우: 최근 5봉의 매수/매도 델타 합계. 가격 방향과 반대이면 다이버전스 — 반전 신호. OHLCV로 근사 계산 (close 위치 기반)."><div class="ivl">오더플로우</div><div class="ivn" style="color:${ofdC};font-size:10px">${ofdS}</div><div class="ivs">최근 5봉 델타</div></div>
     </div></div>
     <div class="ps"><div class="pt">매매 가격대</div><div class="prc">
       ${_lvls.map(x=>`<div class="prr${x.cur?' cur':''}"><div class="prd" style="background:${x.c}"></div><div class="prlb">${x.l}</div><div class="prv" style="color:${x.c}">${_fp(x.v)}</div><div class="prpct" style="color:${x.cur?'var(--t3)':x.v>_cp?'var(--gn)':'var(--rd)'}">${x.cur?'현재':_pct(x.v)}</div></div>`).join('')}
