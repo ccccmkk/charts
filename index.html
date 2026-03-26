@@ -1012,6 +1012,47 @@ function detectSig(d,inds){
   });
 }
 
+// ══ BACKTEST ══
+// 각 신호 이후 최대 BT_BARS봉을 추적해 목표가(+8%) / 손절(-5%) 도달 여부 판정
+function backtestSignals(rows,signals){
+  const{close,high,low}=rows,n=close.length;
+  const BT=20,BUY_T=1.08,BUY_S=0.95,SEL_T=0.92,SEL_S=1.05;
+  return signals.map(sig=>{
+    const isBuy=sig.category==='sb'||sig.category==='pb';
+    const isSell=sig.category==='ss2'||sig.category==='ps2';
+    if(!isBuy&&!isSell)return{...sig,bt:null};
+    const i=sig.i,entry=close[i];
+    if(i>=n-3)return{...sig,bt:{outcome:'recent',pnlPct:null,bars:null}};
+    const tgt=entry*(isBuy?BUY_T:SEL_T),stp=entry*(isBuy?BUY_S:SEL_S);
+    let outcome='expired',exitPrice=close[Math.min(i+BT,n-1)],bars=Math.min(BT,n-1-i);
+    for(let j=i+1;j<Math.min(i+BT+1,n);j++){
+      if(isBuy){
+        if(high[j]>=tgt){outcome='win';exitPrice=tgt;bars=j-i;break;}
+        if(low[j]<=stp){outcome='loss';exitPrice=stp;bars=j-i;break;}
+      }else{
+        if(low[j]<=tgt){outcome='win';exitPrice=tgt;bars=j-i;break;}
+        if(high[j]>=stp){outcome='loss';exitPrice=stp;bars=j-i;break;}
+      }
+    }
+    const pnlPct=isBuy?(exitPrice/entry-1)*100:(1-exitPrice/entry)*100;
+    return{...sig,bt:{outcome,pnlPct,bars,tgt,stp}};
+  });
+}
+function btStats(bted){
+  const trades=bted.filter(s=>s.bt&&s.bt.outcome!=='recent'&&(s.category==='sb'||s.category==='pb'||s.category==='ss2'||s.category==='ps2'));
+  const wins=trades.filter(s=>s.bt.outcome==='win');
+  const losses=trades.filter(s=>s.bt.outcome==='loss');
+  const winRate=trades.length?wins.length/trades.length*100:0;
+  const avgWin=wins.length?wins.reduce((a,s)=>a+s.bt.pnlPct,0)/wins.length:0;
+  const avgLoss=losses.length?losses.reduce((a,s)=>a+s.bt.pnlPct,0)/losses.length:0;
+  const totalG=wins.reduce((a,s)=>a+s.bt.pnlPct,0);
+  const totalL=Math.abs(losses.reduce((a,s)=>a+s.bt.pnlPct,0));
+  const pf=totalL?(totalG/totalL):totalG>0?99:0;
+  const ev=trades.length?trades.reduce((a,s)=>a+s.bt.pnlPct,0)/trades.length:0;
+  const avgBars=trades.length?trades.reduce((a,s)=>a+s.bt.bars,0)/trades.length:0;
+  return{winRate,avgWin,avgLoss,pf,total:trades.length,wins:wins.length,losses:losses.length,expired:trades.filter(s=>s.bt.outcome==='expired').length,avgBars,ev};
+}
+
 // ══ PROCESS ══
 function process(){
   const rows=getDisplayRows();
@@ -1031,6 +1072,8 @@ function process(){
   const inds={R,B,s20,s50,s200,M,ST,vm,CP,AVWAP,LSWEEP,SQZ,OFD,VP:VP_DATA,DIV_R,DIV_M};
   const displaySD={...rows,ticker:SD.ticker,name:SD.name,currency:SD.currency,currentPrice:SD.currentPrice,previousClose:SD.previousClose};
   AS=detectSig(displaySD,inds);
+  AS=backtestSignals(rows,AS);
+  SD._bt=btStats(AS);
   SD._i={...inds,ST_IND,OBV_IND,ADX_IND};SD._rows=rows;
   drawCharts();updateInfobar();drawPanel();
   startRealtime();
@@ -1390,11 +1433,45 @@ function drawPanel(){
       <div class="stg">${tg.map(t=>`<span class="stag">#${t}</span>`).join('')}</div>
     </div></div>
     <div class="ps"><div class="pt">최근 시그널 (${Math.min(AS.length,15)}개)</div><div class="sl2">
-      ${AS.slice(0,15).map(s=>`<div class="si2">
-        <div class="si2h"><span class="sit ${tCls[s.category]}">${tLbl[s.category]}</span><span class="sid">${s.date}</span></div>
-        <div class="sin">${s.name}</div><div class="sdesc">${s.desc}</div>
-      </div>`).join('')||'<div style="color:var(--t3);font-size:10px;text-align:center;padding:12px">시그널 없음</div>'}
-    </div></div>`;}
+      ${AS.slice(0,15).map(s=>{
+        const b=s.bt,ff="font-family:'JetBrains Mono',monospace";
+        let btBadge='';
+        if(b){
+          if(b.outcome==='win') btBadge=`<span style="${ff};font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(5,150,105,.15);color:var(--gn)">✓ +${b.pnlPct.toFixed(1)}% ${b.bars}봉</span>`;
+          else if(b.outcome==='loss') btBadge=`<span style="${ff};font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(220,38,38,.12);color:var(--rd)">✗ ${b.pnlPct.toFixed(1)}% ${b.bars}봉</span>`;
+          else if(b.outcome==='expired') btBadge=`<span style="${ff};font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(100,116,139,.1);color:var(--t3)">${b.pnlPct>=0?'+':''}${b.pnlPct.toFixed(1)}% 만료</span>`;
+          else btBadge=`<span style="${ff};font-size:8px;color:var(--t3)">진행중</span>`;
+        }
+        return `<div class="si2">
+          <div class="si2h"><span class="sit ${tCls[s.category]}">${tLbl[s.category]}</span>${btBadge}<span class="sid">${s.date}</span></div>
+          <div class="sin">${s.name}</div><div class="sdesc">${s.desc}</div>
+        </div>`;
+      }).join('')||'<div style="color:var(--t3);font-size:10px;text-align:center;padding:12px">시그널 없음</div>'}
+    </div></div>
+    ${(()=>{
+      const bt=SD._bt;if(!bt||bt.total<1)return '';
+      const ff="font-family:'JetBrains Mono',monospace";
+      const pfC=bt.pf>=2?'var(--gn)':bt.pf>=1?'var(--t)':'var(--rd)';
+      const wrC=bt.winRate>=60?'var(--gn)':bt.winRate>=45?'var(--t)':'var(--rd)';
+      const evC=bt.ev>=0?'var(--gn)':'var(--rd)';
+      return `<div class="ps"><div class="pt" title="목표+8% / 손절-5% / 최대20봉 자동 백테스트">백테스트 결과 ⓘ</div>
+        <div style="font-size:9px;color:var(--t3);${ff};margin-bottom:8px">목표+8% / 손절-5% / 최대 20봉 · 매수·매도 신호만 집계</div>
+        <div class="ig" style="grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:8px">
+          <div class="iv" title="목표가 또는 손절가에 도달한 완료 거래 수"><div class="ivl">총 거래</div><div class="ivn">${bt.total}회</div><div class="ivs">승${bt.wins}/패${bt.losses}</div></div>
+          <div class="iv" title="+8% 목표 먼저 도달한 비율"><div class="ivl">승률</div><div class="ivn" style="color:${wrC}">${bt.winRate.toFixed(0)}%</div><div class="ivs">${bt.winRate>=60?'우수':bt.winRate>=45?'보통':'주의'}</div></div>
+          <div class="iv" title="총이익÷총손실. 2 이상이면 전략 유효"><div class="ivl">수익팩터</div><div class="ivn" style="color:${pfC}">${bt.pf>50?'∞':bt.pf.toFixed(2)}</div><div class="ivs">${bt.pf>=2?'우수':bt.pf>=1?'보통':'손실'}</div></div>
+          <div class="iv" title="이긴 거래의 평균 수익률"><div class="ivl">평균수익</div><div class="ivn" style="color:var(--gn)">+${bt.avgWin.toFixed(1)}%</div><div class="ivs">이긴 경우</div></div>
+          <div class="iv" title="진 거래의 평균 손실률"><div class="ivl">평균손실</div><div class="ivn" style="color:var(--rd)">${bt.avgLoss.toFixed(1)}%</div><div class="ivs">진 경우</div></div>
+          <div class="iv" title="거래 1회당 기대 수익. 양수면 장기 수익, 음수면 장기 손실"><div class="ivl">기대값</div><div class="ivn" style="color:${evC}">${bt.ev>=0?'+':''}${bt.ev.toFixed(1)}%</div><div class="ivs">거래당</div></div>
+        </div>
+        <div style="font-size:9px;${ff};color:var(--t3);display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;border-top:1px solid var(--br);padding-top:6px">
+          <span>평균 보유 ${bt.avgBars.toFixed(1)}봉</span>
+          <span>20봉 내 미결 ${bt.expired}건</span>
+          <span title="최근 3봉 신호는 아직 결과 미확정">진행중 별도</span>
+        </div>
+      </div>`;
+    })()}
+  `;}
 window.addEventListener('resize',()=>{if(SD){const ids=['mc','rc','dc','vc'];if(sADX)ids.push('ax');ids.forEach(id=>Plotly.Plots.resize(id));}});
 
 // ══ SCREENER ══
