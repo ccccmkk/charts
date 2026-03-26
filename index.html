@@ -774,43 +774,209 @@ function getFibLevels(highs,lows){
   return levels;
 }
 
+// ══ ANCHORED VWAP ══
+function anchoredVwap(high,low,close,volume,anchorIdx=0){
+  const r=Array(close.length).fill(null);
+  let cv=0,cvp=0;
+  for(let i=anchorIdx;i<close.length;i++){
+    const tp=(high[i]+low[i]+close[i])/3;
+    cvp+=tp*(volume[i]||0);cv+=(volume[i]||0);
+    r[i]=cv?cvp/cv:tp;
+  }
+  return r;
+}
+
+// ══ SQUEEZE (BB inside Keltner — 옵션 불필요, ATR 기반) ══
+function squeeze(close,high,low,kcMult=1.5,kcN=20){
+  const bb=bollinger(close,20,2);
+  const em=ema(close,kcN);
+  const at=atr(high,low,close,kcN);
+  const kcU=em.map((v,i)=>v!=null&&at[i]!=null?v+kcMult*at[i]:null);
+  const kcL=em.map((v,i)=>v!=null&&at[i]!=null?v-kcMult*at[i]:null);
+  const sqz=bb.up.map((bu,i)=>bu!=null&&kcU[i]!=null?bu<=kcU[i]&&bb.lo[i]>=kcL[i]:null);
+  const mom=close.map((_,i)=>{
+    if(i<kcN-1||em[i]==null)return null;
+    const hh=Math.max(...high.slice(i-kcN+1,i+1));
+    const ll=Math.min(...low.slice(i-kcN+1,i+1));
+    return close[i]-((hh+ll)/2+em[i])/2;
+  });
+  return{sqz,mom};
+}
+
+// ══ DIVERGENCE (RSI/MACD 다이버전스) ══
+function findDivergence(close,indicator,range=40){
+  const n=close.length,bull=[],bear=[],seen=new Set();
+  for(let i=5;i<n;i++){
+    const s=Math.max(0,i-range);
+    let p1=-1,p2=-1;
+    for(let j=i-2;j>=s+1;j--){
+      if(close[j]<=close[j-1]&&close[j]<=close[j+1]){if(p1===-1)p1=j;else{p2=j;break;}}
+    }
+    if(p1>-1&&p2>-1&&!seen.has('b'+p1)&&indicator[p1]!=null&&indicator[p2]!=null){
+      if(close[p1]<close[p2]&&indicator[p1]>indicator[p2]){seen.add('b'+p1);bull.push({i:p1});}
+    }
+    let q1=-1,q2=-1;
+    for(let j=i-2;j>=s+1;j--){
+      if(close[j]>=close[j-1]&&close[j]>=close[j+1]){if(q1===-1)q1=j;else{q2=j;break;}}
+    }
+    if(q1>-1&&q2>-1&&!seen.has('r'+q1)&&indicator[q1]!=null&&indicator[q2]!=null){
+      if(close[q1]>close[q2]&&indicator[q1]<indicator[q2]){seen.add('r'+q1);bear.push({i:q1});}
+    }
+  }
+  return{bull,bear};
+}
+
+// ══ LIQUIDITY SWEEP (유동성 스윕 / 스탑헌팅) ══
+function liquiditySweep(high,low,close,open,lookback=20){
+  const sweeps=[];
+  for(let i=lookback;i<close.length;i++){
+    const ph=Math.max(...high.slice(i-lookback,i));
+    const pl=Math.min(...low.slice(i-lookback,i));
+    if(low[i]<pl&&close[i]>pl&&close[i]>open[i]){
+      const wr=(pl-low[i])/(high[i]-low[i]||1);
+      if(wr>0.25)sweeps.push({i,type:'bull',level:pl,wick:wr});
+    }
+    if(high[i]>ph&&close[i]<ph&&close[i]<open[i]){
+      const wr=(high[i]-ph)/(high[i]-low[i]||1);
+      if(wr>0.25)sweeps.push({i,type:'bear',level:ph,wick:wr});
+    }
+  }
+  return sweeps;
+}
+
+// ══ ORDER FLOW DELTA (OHLCV 근사 — 매수/매도 압력) ══
+function orderFlowDelta(open,high,low,close,volume){
+  const delta=close.map((c,i)=>{
+    const rng=high[i]-low[i];
+    if(!rng||!volume[i])return 0;
+    return((c-low[i])/rng*2-1)*(volume[i]||0);
+  });
+  const cumDelta=[delta[0]||0];
+  for(let i=1;i<delta.length;i++)cumDelta.push(cumDelta[i-1]+delta[i]);
+  return{delta,cumDelta};
+}
+
 // ══ SIGNALS ══
 function detectSig(d,inds){
-  const{close:c,high:h,low:l,open:op,volume:v,dates}=d,{R,B,s20,s50,s200,M,ST,vm,CP}=inds;
+  const{close:c,high:h,low:l,open:op,volume:v,dates}=d;
+  const{R,B,s20,s50,s200,M,ST,vm,CP,AVWAP,LSWEEP,SQZ,OFD,VP,DIV_R,DIV_M}=inds;
   const sigs=[],n=c.length;
   const add=(i,cat,nm,desc,str,ind)=>sigs.push({i,date:dates[i],category:cat,name:nm,desc,strength:str,price:c[i],ind:ind||[]});
+
   for(let i=50;i<n;i++){
     const r=R[i],rp=R[i-1],p=c[i],pp=c[i-1],bu=B.up[i],bl=B.lo[i],bm=B.mid[i];
     const m=M.ml[i],ms=M.sl[i],mp=M.ml[i-1],msp=M.sl[i-1],k=ST.k[i],kp=ST.k[i-1];
     const vr=v[i]&&vm[i]?v[i]/vm[i]:1;
-    if(r&&rp&&r<35&&r>rp&&rp<30)add(i,'sb','RSI 과매도 반등',`RSI ${rp.toFixed(1)}→${r.toFixed(1)} 반등. 강한 매수 신호.`,3,['RSI']);
-    if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]<=s200[i-1]&&s50[i]>s200[i])add(i,'sb','골든 크로스',`MA50(${s50[i].toFixed(0)}) MA200(${s200[i].toFixed(0)}) 상향 돌파.`,3,['MA50','MA200']);
-    if(m&&ms&&mp&&msp&&mp<msp&&m>ms&&r&&r<50)add(i,'sb','MACD 상향 돌파',`MACD(${m.toFixed(3)}) 시그널 상향 돌파.`,3,['MACD','RSI']);
-    if(bl&&l[i-1]<bl*1.005&&c[i]>op[i]&&vr>1.2)add(i,'sb','BB 하단 반등',`BB 하단(${bl.toFixed(0)}) 터치 후 양봉. 거래량 +${((vr-1)*100).toFixed(0)}%.`,3,['BB','VOL']);
-    if(r&&rp&&rp<35&&r>=35&&r<50)add(i,'pb','RSI 과매도 탈출',`RSI ${rp.toFixed(1)}→${r.toFixed(1)}, 30선 상향.`,2,['RSI']);
-    if(bl&&B.lo[i-1]&&p<bl*1.02&&p>bl&&pp>=B.lo[i-1]*1.02)add(i,'pb','BB 하단 첫 진입',`BB 하단(${bl.toFixed(0)}) 진입.`,2,['BB']);
-    if(k&&kp&&k<25&&k>kp)add(i,'pb','스토캐스틱 과매도 반등',`스토캐스틱 K(${k.toFixed(1)}) 반등.`,2,['Stoch']);
-    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&p>=s20[i]&&c[i]>op[i])add(i,'pb','MA20 지지',`MA20(${s20[i].toFixed(0)}) 지지 후 양봉.`,1,['MA20']);
-    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&p<=s20[i]&&c[i]<op[i])add(i,'ps2','MA20 저항',`MA20(${s20[i].toFixed(0)}) 저항 후 음봉.`,1,['MA20']);
-    if(r&&rp&&r>65&&r<rp&&rp>70)add(i,'ss2','RSI 과매수 하락',`RSI ${rp.toFixed(1)}→${r.toFixed(1)} 반락.`,3,['RSI']);
-    if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]>=s200[i-1]&&s50[i]<s200[i])add(i,'ss2','데스 크로스',`MA50 MA200 하향 돌파.`,3,['MA50','MA200']);
-    if(m&&ms&&mp&&msp&&mp>msp&&m<ms&&r&&r>50)add(i,'ss2','MACD 하향 돌파',`MACD(${m.toFixed(3)}) 시그널 하향 돌파.`,3,['MACD']);
-    if(bu&&h[i-1]>bu&&c[i]<op[i])add(i,'ss2','BB 상단 후 음봉',`BB 상단(${bu.toFixed(0)}) 돌파 후 음봉.`,3,['BB']);
-    if(r&&rp&&rp<65&&r>=65&&r<80)add(i,'ps2','RSI 과매수 진입',`RSI ${rp.toFixed(1)}→${r.toFixed(1)}, 65선 상향.`,2,['RSI']);
-    if(bu&&B.up[i-1]&&p>bu*.98&&p<bu&&pp<=B.up[i-1]*.98)add(i,'ps2','BB 상단 첫 진입',`BB 상단(${bu.toFixed(0)}) 도달.`,2,['BB']);
-    if(k&&kp&&k>75&&k<kp)add(i,'ps2','스토캐스틱 과매수 반락',`스토캐스틱 K(${k.toFixed(1)}) 반락.`,2,['Stoch']);
-    if(r&&r>80)add(i,'dg','RSI 극단 과매수 ⚠',`RSI ${r.toFixed(1)} 극도 과매수.`,3,['RSI']);
-    if(vr>2&&c[i]<op[i]&&(op[i]-c[i])/op[i]>0.03)add(i,'dg','대량 거래 급락 ⚠',`거래량 +${((vr-1)*100).toFixed(0)}% + 급락.`,3,['VOL']);
-    if(s200[i]&&pp>=s200[i]&&p<s200[i])add(i,'dg','MA200 하향 이탈 ⚠',`MA200(${s200[i].toFixed(0)}) 이탈.`,3,['MA200']);
-    if(bl&&p<bl)add(i,'dg','BB 하단 이탈 ⚠',`BB 하단(${bl.toFixed(0)}) 이탈.`,3,['BB']);
+
+    // ── 기본 지표 (가중치 조정: 단독 RSI 신호 하향) ──
+    if(r&&rp&&r<35&&r>rp&&rp<30) add(i,'sb','RSI 과매도 반등',`RSI ${rp.toFixed(1)}→${r.toFixed(1)} 반등.`,2,['RSI']);
+    if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]<=s200[i-1]&&s50[i]>s200[i]) add(i,'sb','골든 크로스',`MA50(${s50[i].toFixed(0)}) MA200(${s200[i].toFixed(0)}) 상향 돌파.`,3,['MA50','MA200']);
+    if(m&&ms&&mp&&msp&&mp<msp&&m>ms&&r&&r<50) add(i,'sb','MACD 상향 돌파',`MACD(${m.toFixed(3)}) 시그널 상향 돌파.`,2,['MACD']);
+    if(bl&&l[i-1]<bl*1.005&&c[i]>op[i]&&vr>1.2) add(i,'sb','BB 하단 반등',`BB 하단(${bl.toFixed(0)}) 터치 후 양봉. 거래량 +${((vr-1)*100).toFixed(0)}%.`,2,['BB','VOL']);
+    if(r&&rp&&rp<35&&r>=35&&r<50) add(i,'pb','RSI 과매도 탈출',`RSI ${rp.toFixed(1)}→${r.toFixed(1)}, 30선 상향.`,1,['RSI']);
+    if(bl&&B.lo[i-1]&&p<bl*1.02&&p>bl&&pp>=B.lo[i-1]*1.02) add(i,'pb','BB 하단 첫 진입',`BB 하단(${bl.toFixed(0)}) 진입.`,1,['BB']);
+    if(k&&kp&&k<25&&k>kp) add(i,'pb','스토캐스틱 과매도 반등',`스토캐스틱 K(${k.toFixed(1)}) 반등.`,1,['Stoch']);
+    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&p>=s20[i]&&c[i]>op[i]) add(i,'pb','MA20 지지',`MA20(${s20[i].toFixed(0)}) 지지 후 양봉.`,1,['MA20']);
+    if(s20[i]&&Math.abs(p-s20[i])/s20[i]<0.01&&p<=s20[i]&&c[i]<op[i]) add(i,'ps2','MA20 저항',`MA20(${s20[i].toFixed(0)}) 저항 후 음봉.`,1,['MA20']);
+    // RSI 과매수: 확실히 꺾여야만 매도 (단순 70 돌파는 무시 — 추세 지속 가능)
+    if(r&&rp&&r>65&&r<rp&&rp>70&&r<rp-3) add(i,'ss2','RSI 과매수 하락',`RSI ${rp.toFixed(1)}→${r.toFixed(1)} 반락.`,2,['RSI']);
+    // RSI 극단 과매수 → 모멘텀 신호로 변경 (오히려 강한 추세일 수 있음)
+    if(r&&r>80) add(i,'op','RSI 극단 모멘텀',`RSI ${r.toFixed(1)} — 강한 추세 지속 가능성. 추격 시 분할 접근.`,2,['RSI']);
+    if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]>=s200[i-1]&&s50[i]<s200[i]) add(i,'ss2','데스 크로스',`MA50 MA200 하향 돌파.`,3,['MA50','MA200']);
+    if(m&&ms&&mp&&msp&&mp>msp&&m<ms&&r&&r>50) add(i,'ss2','MACD 하향 돌파',`MACD(${m.toFixed(3)}) 시그널 하향 돌파.`,2,['MACD']);
+    if(bu&&h[i-1]>bu&&c[i]<op[i]) add(i,'ss2','BB 상단 후 음봉',`BB 상단(${bu.toFixed(0)}) 돌파 후 음봉.`,2,['BB']);
+    if(r&&rp&&rp<65&&r>=65&&r<80) add(i,'ps2','RSI 과매수 진입',`RSI ${rp.toFixed(1)}→${r.toFixed(1)}, 65선 상향.`,1,['RSI']);
+    if(bu&&B.up[i-1]&&p>bu*.98&&p<bu&&pp<=B.up[i-1]*.98) add(i,'ps2','BB 상단 첫 진입',`BB 상단(${bu.toFixed(0)}) 도달.`,1,['BB']);
+    if(k&&kp&&k>75&&k<kp) add(i,'ps2','스토캐스틱 과매수 반락',`스토캐스틱 K(${k.toFixed(1)}) 반락.`,1,['Stoch']);
+    if(vr>2&&c[i]<op[i]&&(op[i]-c[i])/op[i]>0.03) add(i,'dg','대량 거래 급락 ⚠',`거래량 +${((vr-1)*100).toFixed(0)}% + 급락.`,3,['VOL']);
+    if(s200[i]&&pp>=s200[i]&&p<s200[i]) add(i,'dg','MA200 하향 이탈 ⚠',`MA200(${s200[i].toFixed(0)}) 이탈.`,3,['MA200']);
+    if(bl&&p<bl) add(i,'dg','BB 하단 이탈 ⚠',`BB 하단(${bl.toFixed(0)}) 이탈.`,3,['BB']);
     if(bu&&bl&&bm){const bw=(bu-bl)/bm,p5=(B.up[i-5]&&B.lo[i-5]&&B.mid[i-5])?(B.up[i-5]-B.lo[i-5])/B.mid[i-5]:bw+1;
-      if(bw<0.06&&p5>bw)add(i,'op','BB 스퀴즈 — 폭발 직전',`BB 폭(${(bw*100).toFixed(1)}%) 수축.`,2,['BB']);}
-    if(vr>2.5&&c[i]>op[i])add(i,'op','거래량 급증 + 양봉',`+${((vr-1)*100).toFixed(0)}% 거래량.`,2,['VOL']);
-    if(i>=5&&r&&R[i-5]&&c[i]<c[i-5]&&r>R[i-5]+5)add(i,'op','RSI 강세 다이버전스',`주가 하락 중 RSI 상승.`,2,['RSI']);}
+      if(bw<0.06&&p5>bw) add(i,'op','BB 스퀴즈 — 폭발 직전',`BB 폭(${(bw*100).toFixed(1)}%) 수축.`,2,['BB']);}
+    if(vr>2.5&&c[i]>op[i]) add(i,'op','거래량 급증 + 양봉',`+${((vr-1)*100).toFixed(0)}% 거래량.`,2,['VOL']);
+
+    // ── Anchored VWAP 신호 (높은 가중치) ──
+    if(AVWAP&&AVWAP[i]!=null&&AVWAP[i-1]!=null){
+      const av=AVWAP[i],avp=AVWAP[i-1],pctAway=(c[i]-av)/av;
+      if(Math.abs(pctAway)<0.015&&c[i]>av&&c[i]>op[i]&&vr>1.1)
+        add(i,'sb','AVWAP 지지 반등',`앵커드 VWAP(${av.toFixed(0)}) 위 양봉. 수요 확인.`,3,['AVWAP','VOL']);
+      if(c[i]>av&&pp<=avp&&vr>1.3)
+        add(i,'sb','AVWAP 상향 돌파',`앵커드 VWAP(${av.toFixed(0)}) 상향 돌파. 매수세 우위.`,3,['AVWAP','VOL']);
+      if(Math.abs(pctAway)<0.015&&c[i]<av&&c[i]<op[i]&&vr>1.1)
+        add(i,'ss2','AVWAP 저항 반락',`앵커드 VWAP(${av.toFixed(0)}) 아래 음봉.`,3,['AVWAP']);
+      if(c[i]<av&&pp>=avp&&vr>1.2)
+        add(i,'dg','AVWAP 하향 이탈 ⚠',`앵커드 VWAP(${av.toFixed(0)}) 하향 이탈.`,3,['AVWAP']);
+      if(pctAway<-0.05)
+        add(i,'op','AVWAP 하방 괴리',`현재가 AVWAP 대비 ${(pctAway*100).toFixed(1)}% 하방. 되돌림 가능성.`,2,['AVWAP']);
+    }
+
+    // ── Volume Profile POC 신호 (높은 가중치) ──
+    if(VP&&VP.length){
+      const poc=VP.find(b=>b.isPOC);
+      if(poc){
+        const pocMid=(poc.y0+poc.y1)/2,pctPoc=(c[i]-pocMid)/pocMid;
+        if(Math.abs(pctPoc)<0.012&&c[i]>op[i]&&vr>1.0)
+          add(i,'sb','POC 지지 반등',`매물대 중심가(${pocMid.toFixed(0)}) 지지. 강한 수요.`,3,['VP','VOL']);
+        if(Math.abs(pctPoc)<0.012&&c[i]<op[i]&&vr>1.0)
+          add(i,'ss2','POC 저항 반락',`매물대 중심가(${pocMid.toFixed(0)}) 저항.`,2,['VP']);
+      }
+    }
+
+    // ── 스퀴즈 발사 신호 (옵션 불필요 — Keltner+BB) ──
+    if(SQZ&&SQZ.sqz&&i>=2){
+      if(SQZ.sqz[i-1]===true&&SQZ.sqz[i]===false){
+        const momDir=SQZ.mom[i]>0?'상승':'하락';
+        add(i,SQZ.mom[i]>0?'sb':'ss2','스퀴즈 발사 🚀',`켈트너 채널 이탈 — ${momDir} 방향 모멘텀 폭발.`,3,['SQZ']);
+      }
+      if(SQZ.sqz[i]===true&&SQZ.sqz[i-1]===true&&i%7===0)
+        add(i,'op','스퀴즈 압축 중',`BB가 켈트너 채널 내부 — 폭발적 움직임 준비 중.`,2,['SQZ']);
+    }
+
+    // ── Order Flow Delta 신호 (높은 가중치) ──
+    if(OFD&&i>=5){
+      const cd=OFD.cumDelta,dl=OFD.delta;
+      if(c[i]<c[i-5]&&cd[i]>cd[i-5]&&dl[i]>0)
+        add(i,'pb','OFD 강세 다이버전스',`가격 하락 중 매수 델타 증가 — 매집 신호.`,3,['OFD']);
+      if(c[i]>c[i-5]&&cd[i]<cd[i-5]&&dl[i]<0)
+        add(i,'ps2','OFD 약세 다이버전스',`가격 상승 중 매도 델타 증가 — 분산 신호.`,3,['OFD']);
+      if(dl[i]>0&&vr>2&&c[i]>op[i])
+        add(i,'sb','강한 매수 오더플로우',`매수 델타 급증 + 거래량 ${vr.toFixed(1)}x.`,3,['OFD','VOL']);
+      if(dl[i]<0&&vr>2&&c[i]<op[i])
+        add(i,'ss2','강한 매도 오더플로우',`매도 델타 급증 + 거래량 ${vr.toFixed(1)}x.`,3,['OFD','VOL']);
+    }
+  }
+
+  // ── RSI/MACD 다이버전스 ──
+  if(DIV_R){
+    DIV_R.bull.filter(x=>x.i>=c.length-60).forEach(x=>add(x.i,'sb','RSI 강세 다이버전스',`가격 신저점 + RSI 고저점 — 반전 가능성 높음.`,3,['RSI','DIV']));
+    DIV_R.bear.filter(x=>x.i>=c.length-60).forEach(x=>add(x.i,'ss2','RSI 약세 다이버전스',`가격 신고점 + RSI 저고점 — 반전 위험.`,3,['RSI','DIV']));
+  }
+  if(DIV_M){
+    DIV_M.bull.filter(x=>x.i>=c.length-60).forEach(x=>add(x.i,'pb','MACD 강세 다이버전스',`가격 신저점 + MACD 히스토그램 상승.`,2,['MACD','DIV']));
+    DIV_M.bear.filter(x=>x.i>=c.length-60).forEach(x=>add(x.i,'ps2','MACD 약세 다이버전스',`가격 신고점 + MACD 히스토그램 하락.`,2,['MACD','DIV']));
+  }
+
+  // ── 유동성 스윕 (Liquidity Sweep) ──
+  if(LSWEEP){
+    LSWEEP.filter(s=>s.i>=c.length-60).forEach(s=>{
+      if(s.type==='bull')
+        add(s.i,'sb','유동성 스윕 — 저점 사냥',`저점(${s.level.toFixed(0)}) 하향 돌파 후 회복. 스탑헌팅 후 반전.`,3,['LSweep']);
+      else
+        add(s.i,'ss2','유동성 스윕 — 고점 사냥',`고점(${s.level.toFixed(0)}) 상향 돌파 후 반락. 분산 신호.`,3,['LSweep']);
+    });
+  }
+
+  // ── 캔들 패턴 ──
   CP.forEach(({i,n:nm,d:dr})=>{if(i>=c.length-20){
     const cat=dr==='b'?'pb':dr==='s'?'ps2':'op';
-    add(i,cat,'캔들: '+nm,nm+'패턴.',1,['캔들']);}});
-  const dk={};return sigs.sort((a,b)=>b.i-a.i).filter(s=>{const k=s.category+'_'+Math.floor(s.i/4);return dk[k]?false:(dk[k]=1,true);});}
+    add(i,cat,'캔들: '+nm,nm+' 패턴.',1,['캔들']);}});
+
+  const dk={};
+  return sigs.sort((a,b)=>b.i-a.i).filter(s=>{
+    const k=s.category+'_'+Math.floor(s.i/4);
+    return dk[k]?false:(dk[k]=1,true);
+  });
+}
 
 // ══ PROCESS ══
 function process(){
@@ -821,7 +987,14 @@ function process(){
   const ST_IND=supertrend(high,low,close);
   const OBV_IND=obv(close,volume);
   const ADX_IND=adx(high,low,close);
-  const inds={R,B,s20,s50,s200,M,ST,vm,CP};
+  const AVWAP=anchoredVwap(high,low,close,volume,0);
+  const SQZ=squeeze(close,high,low);
+  const LSWEEP=liquiditySweep(high,low,close,open);
+  const OFD=orderFlowDelta(open,high,low,close,volume);
+  const VP_DATA=sVP?getVolumeProfile(high,low,close,volume):null;
+  const DIV_R=findDivergence(close,R);
+  const DIV_M=findDivergence(close,M.hist.map(v=>v??0));
+  const inds={R,B,s20,s50,s200,M,ST,vm,CP,AVWAP,LSWEEP,SQZ,OFD,VP:VP_DATA,DIV_R,DIV_M};
   const displaySD={...rows,ticker:SD.ticker,name:SD.name,currency:SD.currency,currentPrice:SD.currentPrice,previousClose:SD.previousClose};
   AS=detectSig(displaySD,inds);
   SD._i={...inds,ST_IND,OBV_IND,ADX_IND};SD._rows=rows;
@@ -833,7 +1006,7 @@ function process(){
 function drawCharts(){
   const rows=SD._rows;
   const{close,high,low,open,volume,dates}=rows;
-  const{R,B,s20,s50,s200,M,ST_IND,OBV_IND,ADX_IND}=SD._i;
+  const{R,B,s20,s50,s200,M,ST_IND,OBV_IND,ADX_IND,AVWAP,SQZ}=SD._i;
   document.getElementById('ov').style.display='none';
   const bg='rgba(0,0,0,0)',gc='rgba(203,213,225,.7)',ac='#94a3b8',ff="'JetBrains Mono',monospace";
   const ax={gridcolor:gc,zerolinecolor:gc,tickfont:{family:ff,size:9,color:ac},color:ac,showgrid:true};
@@ -852,6 +1025,13 @@ function drawCharts(){
     tr.push({type:'scatter',mode:'lines',x:dates,y:B.mid,line:{color:'rgba(5,150,105,.55)',width:1},showlegend:false,hoverinfo:'skip'});}
   if(sM){[{d:s20,c:'#f59e0b',l:'MA20'},{d:s50,c:'#3b82f6',l:'MA50'},{d:s200,c:'#8b5cf6',l:'MA200'}].forEach(({d,c,l})=>
     tr.push({type:'scatter',mode:'lines',x:dates,y:d,line:{color:c,width:1.5},name:l,showlegend:true,hoverinfo:'skip'}));}
+
+  // ── Anchored VWAP ──
+  if(AVWAP){
+    tr.push({type:'scatter',mode:'lines',x:dates,y:AVWAP,
+      line:{color:'rgba(251,191,36,.9)',width:1.5,dash:'dashdot'},
+      name:'AVWAP',showlegend:true,hovertemplate:'AVWAP: %{y:,.0f}<extra></extra>'});
+  }
 
   // ── SuperTrend ──
   if(sST&&ST_IND){
@@ -1078,7 +1258,7 @@ function updateInfobar(){
 
 // ══ PANEL ══
 function drawPanel(){
-  const rows=SD._rows,{_i:{R,B,s20,s50,s200,M}}=SD,n=rows.close.length;
+  const rows=SD._rows,{_i:{R,B,s20,s50,s200,M,AVWAP,SQZ,OFD}}=SD,n=rows.close.length;
   const lc=rows.close,lr=R[n-1],lbu=B.up[n-1],lbl=B.lo[n-1],lbm=B.mid[n-1],lm=M.ml[n-1],ls=M.sl[n-1],l50=s50[n-1],l200=s200[n-1];
   const cats={sb:{l:'강한 매수',i:'▲'},pb:{l:'분할 매수',i:'△'},ss2:{l:'강한 매도',i:'▼'},ps2:{l:'분할 매도',i:'▽'},dg:{l:'위험 신호',i:'⚠'},op:{l:'기회 신호',i:'◆'}};
   const cnt={};AS.forEach(s=>{cnt[s.category]=(cnt[s.category]||0)+1;});
@@ -1090,12 +1270,29 @@ function drawPanel(){
   else if(bs>ss+3){vd='🟢 매수 우세 — 단계적 진입';vc='var(--gn)';st='다수의 매수 시그널이 감지됩니다. 3회 이상 분할 매수를 권장합니다.';tg=['분할매수','BB하단','RSI확인'];}
   else if(ss>bs+3){vd='🔴 매도 우세 — 익절 또는 관망';vc='var(--rd)';st='다수의 매도 시그널이 감지됩니다. 보유 포지션 분할 익절을 권장합니다.';tg=['분할익절','RSI주의','관망'];}
   else{vd='🔵 중립 — 추세 확인 후 대응';vc='var(--bl)';st='매수·매도 시그널이 혼재합니다. 추세 확인 후 진입을 권장합니다.';tg=['관망','추세확인','소량관찰'];}
-  const rC=lr==null?'var(--t2)':lr>70?'var(--rd)':lr<30?'var(--gn)':'var(--t)';
-  const rS=lr==null?'-':lr>70?'과매수 ⚠':lr<30?'과매도 ✓':lr>55?'고가권':lr<45?'저가권':'중립';
+  // RSI: 과매수여도 모멘텀 표시 (주의 아님)
+  const rC=lr==null?'var(--t2)':lr>80?'#f59e0b':lr<30?'var(--gn)':'var(--t)';
+  const rS=lr==null?'-':lr>80?'극단모멘텀 ⚡':lr>70?'과매수(추세)':lr<30?'과매도 ✓':lr>55?'고가권':lr<45?'저가권':'중립';
   const mC=lm==null?'var(--t2)':lm>(ls||0)?'var(--gn)':'var(--rd)';
   const bbP=lbu&&lbl?((lc[n-1]-lbl)/(lbu-lbl)*100).toFixed(0)+'%':'-';
   const maC=l50&&l200?(l50>l200?'var(--gn)':'var(--rd)'):'var(--t2)';
   const maS=l50&&l200?(l50>l200?'골든 ✓':'데드 ⚠'):'-';
+  // Squeeze status
+  const sqzLast=SQZ?.sqz?.[n-1],sqzPrev=SQZ?.sqz?.[n-2];
+  const sqzFired=sqzPrev===true&&sqzLast===false;
+  const sqzOn=sqzLast===true;
+  const sqzMom=SQZ?.mom?.[n-1];
+  const sqzC=sqzFired?(sqzMom>0?'var(--gn)':'var(--rd)'):sqzOn?'#f59e0b':'var(--t3)';
+  const sqzS=sqzFired?(sqzMom>0?'발사 🚀↑':'발사 🚀↓'):sqzOn?'압축 중 ⚡':'비활성';
+  // AVWAP distance
+  const avLast=AVWAP?.[n-1];
+  const avPct=avLast&&lc[n-1]?((lc[n-1]-avLast)/avLast*100):null;
+  const avC=avPct==null?'var(--t2)':avPct>2?'var(--gn)':avPct<-2?'var(--rd)':'var(--t)';
+  const avS=avPct==null?'-':(avPct>=0?'+':'')+avPct.toFixed(1)+'%';
+  // Order Flow bias (last 5 bars)
+  const ofdBias=OFD?OFD.delta.slice(n-5).reduce((a,b)=>a+b,0):null;
+  const ofdC=ofdBias==null?'var(--t2)':ofdBias>0?'var(--gn)':'var(--rd)';
+  const ofdS=ofdBias==null?'-':ofdBias>0?'매수 우위':'매도 우위';
   const tCls={sb:'tbu',pb:'tpb',ss2:'tse',ps2:'tps',dg:'tdg',op:'top'};
   const tLbl={sb:'강한매수',pb:'분할매수',ss2:'강한매도',ps2:'분할매도',dg:'위험',op:'기회'};
   const _cp=SD.currentPrice,_kr=SD.currency==='KRW';
@@ -1118,6 +1315,9 @@ function drawPanel(){
       <div class="iv"><div class="ivl">MACD</div><div class="ivn" style="color:${mC}">${lm!=null?lm.toFixed(3):'-'}</div><div class="ivs">${lm==null?'-':lm>(ls||0)?'강세 ↑':'약세 ↓'}</div></div>
       <div class="iv"><div class="ivl">BB 위치</div><div class="ivn">${bbP}</div><div class="ivs">0%하단 100%상단</div></div>
       <div class="iv"><div class="ivl">MA 배열</div><div class="ivn" style="color:${maC}">${maS}</div><div class="ivs">MA50 vs MA200</div></div>
+      <div class="iv"><div class="ivl">스퀴즈</div><div class="ivn" style="color:${sqzC};font-size:10px">${sqzS}</div><div class="ivs">Keltner+BB</div></div>
+      <div class="iv"><div class="ivl">AVWAP</div><div class="ivn" style="color:${avC}">${avS}</div><div class="ivs">기간 앵커 대비</div></div>
+      <div class="iv"><div class="ivl">오더플로우</div><div class="ivn" style="color:${ofdC};font-size:10px">${ofdS}</div><div class="ivs">최근 5봉 델타</div></div>
     </div></div>
     <div class="ps"><div class="pt">매매 가격대</div><div class="prc">
       ${_lvls.map(x=>`<div class="prr${x.cur?' cur':''}"><div class="prd" style="background:${x.c}"></div><div class="prlb">${x.l}</div><div class="prv" style="color:${x.c}">${_fp(x.v)}</div><div class="prpct" style="color:${x.cur?'var(--t3)':x.v>_cp?'var(--gn)':'var(--rd)'}">${x.cur?'현재':_pct(x.v)}</div></div>`).join('')}
