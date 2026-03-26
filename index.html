@@ -229,6 +229,7 @@ function tryLogin(){
     <input id="wk" placeholder="Cloudflare Worker URL (Yahoo용)" oninput="saveWorkerUrl(this.value)">
     <a href="https://workers.cloudflare.com" target="_blank" class="ak-link">설정↗</a>
   </div>
+  <button class="go-btn" style="background:var(--pu);flex-shrink:0" onclick="openScreener()">📡 스캔</button>
 </header>
 <div id="fib-ctrl">
   <span style="color:var(--t2)">피보나치 설정:</span>
@@ -238,6 +239,39 @@ function tryLogin(){
   <input id="fib-l" type="number" placeholder="자동" step="any" oninput="onFibInput()">
   <button onclick="resetFib()">자동</button>
 </div>
+<!-- ══ SCREENER MODAL ══ -->
+<div id="scr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9998;overflow-y:auto;padding:16px">
+  <div style="background:var(--sf);border:1px solid var(--br);border-radius:12px;max-width:700px;margin:0 auto;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--pu)">📡 종목 스캐너</div>
+      <button onclick="closeScreener()" style="background:none;border:1px solid var(--br);border-radius:5px;padding:3px 10px;cursor:pointer;font-size:12px;color:var(--t2)">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--t3);margin-bottom:12px;line-height:1.7">
+      스퀴즈·AVWAP·OFD·다이버전스 기준으로 매수 유망 종목을 자동 스캔합니다.<br>
+      Stooq 무료 데이터 사용 (API키 불필요) · 최근 3개월 일봉 기준 · 클릭하면 상세 분석으로 이동
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+      <select id="scr-uni" style="font-family:'JetBrains Mono',monospace;font-size:11px;border:1px solid var(--br);border-radius:6px;background:var(--s2);color:var(--t);padding:5px 8px;outline:none">
+        <option value="us">🇺🇸 미국 주요주 30</option>
+        <option value="kr">🇰🇷 한국 코스피 30</option>
+        <option value="all">🌐 전체 60종목</option>
+      </select>
+      <select id="scr-filter" style="font-family:'JetBrains Mono',monospace;font-size:11px;border:1px solid var(--br);border-radius:6px;background:var(--s2);color:var(--t);padding:5px 8px;outline:none">
+        <option value="buy">매수 우선 정렬</option>
+        <option value="sqz">스퀴즈 우선 정렬</option>
+        <option value="div">다이버전스 우선</option>
+      </select>
+      <button id="scr-btn" onclick="runScan()" style="background:var(--pu);border:none;color:#fff;border-radius:6px;padding:6px 16px;cursor:pointer;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700">스캔 시작</button>
+      <span id="scr-status" style="font-size:10px;color:var(--t3);font-family:'JetBrains Mono',monospace"></span>
+    </div>
+    <div id="scr-prog" style="display:none;margin-bottom:10px">
+      <div style="font-size:10px;font-family:'JetBrains Mono';color:var(--t3);margin-bottom:4px" id="scr-prog-txt"></div>
+      <div style="background:var(--br);border-radius:4px;height:5px"><div id="scr-prog-bar" style="background:var(--pu);height:5px;border-radius:4px;width:0%;transition:width .3s"></div></div>
+    </div>
+    <div id="scr-results"></div>
+  </div>
+</div>
+
 <div class="layout">
   <div class="ca">
     <div class="ib2" id="infobar"><span style="color:var(--t3);font-size:11px;font-family:'JetBrains Mono',monospace">종목을 검색하면 분석이 시작됩니다</span></div>
@@ -1362,6 +1396,186 @@ function drawPanel(){
       </div>`).join('')||'<div style="color:var(--t3);font-size:10px;text-align:center;padding:12px">시그널 없음</div>'}
     </div></div>`;}
 window.addEventListener('resize',()=>{if(SD){const ids=['mc','rc','dc','vc'];if(sADX)ids.push('ax');ids.forEach(id=>Plotly.Plots.resize(id));}});
+
+// ══ SCREENER ══
+const SCR_UNIVERSE={
+  us:['AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','JPM','V','WMT',
+      'MA','UNH','XOM','PG','HD','CVX','AVGO','LLY','COST','ABBV',
+      'MRK','PEP','KO','NFLX','ADBE','AMD','BAC','GS','INTC','MU'],
+  kr:['005930.KS','000660.KS','005380.KS','000270.KS','373220.KS',
+      '207940.KS','035720.KS','035420.KS','068270.KS','005490.KS',
+      '006400.KS','051910.KS','105560.KS','055550.KS','012330.KS',
+      '066570.KS','086790.KS','096770.KS','017670.KS','030200.KS',
+      '259960.KS','036570.KS','323410.KS','010130.KS','028260.KS',
+      '090430.KS','251270.KS','012450.KS','329180.KS','010140.KS']
+};
+
+function openScreener(){document.getElementById('scr-modal').style.display='block';}
+function closeScreener(){document.getElementById('scr-modal').style.display='none';}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeScreener();});
+
+async function fetchForScreener(ticker){
+  const isKR=ticker.endsWith('.KS')||ticker.endsWith('.KQ');
+  let sym=ticker.toLowerCase();
+  if(isKR){sym=sym.replace(/\.(ks|kq)$/,'.kr');}
+  else if(!sym.includes('.')){sym=sym+'.us';}
+  const now=new Date(),cutoff=new Date();
+  cutoff.setMonth(cutoff.getMonth()-3);
+  const d2=now.toISOString().split('T')[0].replace(/-/g,'');
+  const d1=cutoff.toISOString().split('T')[0].replace(/-/g,'');
+  const text=await tryFetch(`https://stooq.com/q/d/l/?s=${sym}&d1=${d1}&d2=${d2}&i=d`,12000);
+  const lines=text.trim().split('\n');
+  if(lines.length<22)return null;
+  const rows={dates:[],open:[],high:[],low:[],close:[],volume:[]};
+  for(let i=1;i<lines.length;i++){
+    const p=lines[i].split(',');
+    if(p.length<5||!p[0]||p[4]==='N/D'||p[4]==='null')continue;
+    rows.dates.push(p[0]);rows.open.push(+p[1]);rows.high.push(+p[2]);
+    rows.low.push(+p[3]);rows.close.push(+p[4]);rows.volume.push(+(p[5]||0));
+  }
+  if(rows.close.length<20)return null;
+  rows.dates.reverse();rows.open.reverse();rows.high.reverse();
+  rows.low.reverse();rows.close.reverse();rows.volume.reverse();
+  return{rows,ticker,name:ticker,currency:isKR?'KRW':'USD',
+    currentPrice:rows.close[rows.close.length-1]};
+}
+
+function scoreStock(rows){
+  const{close,high,low,open,volume}=rows,n=close.length;
+  let score=0;const reasons=[];
+  let sqzFired=false,sqzOn=false,hasBullDiv=false,hasBearDiv=false;
+
+  // 스퀴즈
+  try{
+    const sqz=squeeze(close,high,low);
+    sqzFired=sqz.sqz[n-2]===true&&sqz.sqz[n-1]===false;
+    sqzOn=sqz.sqz[n-1]===true;
+    const momUp=sqz.mom[n-1]>0;
+    if(sqzFired){score+=10;reasons.push(momUp?'🚀스퀴즈↑':'🚀스퀴즈↓');}
+    else if(sqzOn){score+=5;reasons.push('⚡압축중');}
+  }catch{}
+
+  // AVWAP 위치
+  let avPct=null;
+  try{
+    const av=anchoredVwap(high,low,close,volume,0);
+    avPct=(close[n-1]-av[n-1])/av[n-1]*100;
+    if(avPct>0&&avPct<8){score+=3;reasons.push(`AVWAP+${avPct.toFixed(1)}%`);}
+    else if(avPct>=8){score+=1;reasons.push(`AVWAP+${avPct.toFixed(1)}%`);}
+    else if(avPct>-3&&avPct<=0){score+=2;reasons.push(`AVWAP${avPct.toFixed(1)}%`);}
+  }catch{}
+
+  // 오더플로우 델타
+  let ofdPos=false;
+  try{
+    const ofd=orderFlowDelta(open,high,low,close,volume);
+    const bias=ofd.delta.slice(n-5).reduce((a,b)=>a+b,0);
+    ofdPos=bias>0;
+    if(ofdPos){score+=2;reasons.push('OFD+');}
+    // OFD 강세 다이버전스
+    if(close[n-1]<close[n-6]&&ofd.cumDelta[n-1]>ofd.cumDelta[n-6]){
+      score+=4;reasons.push('OFD다이버전스');
+    }
+  }catch{}
+
+  // RSI 다이버전스
+  try{
+    const R=rsi(close);
+    const divR=findDivergence(close,R,35);
+    hasBullDiv=divR.bull.some(d=>d.i>=n-15);
+    hasBearDiv=divR.bear.some(d=>d.i>=n-15);
+    if(hasBullDiv){score+=5;reasons.push('RSI강세다이버전스');}
+    const lr=R[n-1];
+    if(lr&&lr<35){score+=3;reasons.push(`RSI${lr.toFixed(0)}과매도`);}
+    else if(lr&&lr>50&&lr<68){score+=1;reasons.push(`RSI${lr.toFixed(0)}`);}
+  }catch{}
+
+  // 유동성 스윕 (최근 10봉)
+  try{
+    const ls=liquiditySweep(high,low,close,open);
+    if(ls.some(s=>s.type==='bull'&&s.i>=n-10)){score+=3;reasons.push('스윕↑');}
+  }catch{}
+
+  // 거래량 급증 + 양봉
+  try{
+    const vm=sma(volume,20);
+    const vr=volume[n-1]&&vm[n-1]?volume[n-1]/vm[n-1]:1;
+    if(vr>2&&close[n-1]>open[n-1]){score+=2;reasons.push(`거래량${vr.toFixed(1)}x`);}
+  }catch{}
+
+  return{score,reasons,sqzFired,sqzOn,avPct,ofdPos,hasBullDiv};
+}
+
+let _scrRunning=false;
+async function runScan(){
+  if(_scrRunning)return;
+  _scrRunning=true;
+  const btn=document.getElementById('scr-btn');
+  btn.textContent='스캔 중...';btn.disabled=true;
+  const uni=document.getElementById('scr-uni').value;
+  const tickers=uni==='all'?[...SCR_UNIVERSE.us,...SCR_UNIVERSE.kr]:SCR_UNIVERSE[uni];
+  const results=[];let done=0;
+  document.getElementById('scr-prog').style.display='block';
+  document.getElementById('scr-results').innerHTML='';
+
+  for(let i=0;i<tickers.length;i+=3){
+    const batch=tickers.slice(i,i+3);
+    await Promise.all(batch.map(async t=>{
+      try{
+        const res=await fetchForScreener(t);
+        if(res){const sc=scoreStock(res.rows);results.push({ticker:t,name:res.name,currency:res.currency,price:res.currentPrice,...sc});}
+      }catch{}
+      done++;
+      const pct=Math.round(done/tickers.length*100);
+      document.getElementById('scr-prog-txt').textContent=`${done}/${tickers.length} 분석 중... (${t})`;
+      document.getElementById('scr-prog-bar').style.width=pct+'%';
+    }));
+    if(i+3<tickers.length)await new Promise(r=>setTimeout(r,150));
+  }
+
+  const filter=document.getElementById('scr-filter').value;
+  if(filter==='sqz'){results.sort((a,b)=>(b.sqzFired?10:b.sqzOn?5:0)-(a.sqzFired?10:a.sqzOn?5:0)||b.score-a.score);}
+  else if(filter==='div'){results.sort((a,b)=>(b.hasBullDiv?5:0)-(a.hasBullDiv?5:0)||b.score-a.score);}
+  else{results.sort((a,b)=>b.score-a.score);}
+
+  document.getElementById('scr-prog').style.display='none';
+  renderScrResults(results);
+  btn.textContent='재스캔';btn.disabled=false;
+  _scrRunning=false;
+}
+
+function renderScrResults(results){
+  const el=document.getElementById('scr-results');
+  const ff="font-family:'JetBrains Mono',monospace";
+  if(!results.length){el.innerHTML=`<div style="${ff};font-size:11px;color:var(--t3);text-align:center;padding:20px">데이터를 가져오지 못했습니다 (CORS 또는 네트워크 오류)</div>`;return;}
+  const top=results.slice(0,25);
+  el.innerHTML=`
+    <div style="${ff};font-size:9px;color:var(--t3);margin-bottom:8px">${results.length}개 분석 완료 · 스코어 높을수록 매수 유망 · 클릭 시 상세 분석</div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      ${top.map((r,i)=>{
+        const borderC=r.score>=12?'rgba(5,150,105,.4)':r.score>=7?'rgba(124,58,237,.3)':r.score>=4?'rgba(37,99,235,.2)':'var(--br)';
+        const scoreC=r.score>=12?'var(--gn)':r.score>=7?'var(--pu)':r.score>=4?'var(--bl)':'var(--t2)';
+        const priceStr=r.currency==='KRW'?Math.round(r.price).toLocaleString('ko-KR')+'원':'$'+r.price.toFixed(2);
+        return `<div onclick="closeScreener();qs('${r.ticker}')" style="cursor:pointer;background:var(--s2);border:1px solid ${borderC};border-radius:8px;padding:9px 12px;display:flex;align-items:center;gap:10px;transition:border-color .15s" onmouseover="this.style.borderColor='var(--bl)'" onmouseout="this.style.borderColor='${borderC}'">
+          <div style="${ff};font-size:10px;color:var(--t3);width:18px;text-align:right;flex-shrink:0">${i+1}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+              <span style="${ff};font-size:12px;font-weight:700;color:var(--bl)">${r.ticker}</span>
+              <span style="font-size:10px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}</span>
+              <span style="${ff};font-size:9px;color:var(--t3);margin-left:auto;flex-shrink:0">${priceStr}</span>
+            </div>
+            <div style="display:flex;gap:3px;flex-wrap:wrap">
+              ${r.reasons.map(rr=>`<span style="${ff};font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(124,58,237,.1);color:var(--pu);border:1px solid rgba(124,58,237,.2)">${rr}</span>`).join('')}
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="${ff};font-size:15px;font-weight:700;color:${scoreC}">${r.score}</div>
+            <div style="${ff};font-size:8px;color:var(--t3)">점</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+};
 </script>
 </body>
 </html>
