@@ -291,6 +291,51 @@ function tryLogin(){
   </div>
 </div>
 
+<!-- Backtest Animation Modal -->
+<div id="btanim-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:9999;overflow-y:auto;padding:12px">
+  <div style="background:var(--sf);border:1px solid var(--br);border-radius:12px;max-width:680px;margin:0 auto;padding:18px;box-shadow:0 8px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--pu)">⚡ 시그널 기반 백테스트 애니메이션</div>
+      <button onclick="closeBtAnimation()" style="background:none;border:1px solid var(--br);border-radius:5px;padding:3px 10px;cursor:pointer;font-size:12px;color:var(--t2)">✕</button>
+    </div>
+    <div id="bta-info"></div>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;flex-wrap:wrap">
+      <div id="bta-balance" style="font-family:'JetBrains Mono',monospace"></div>
+      <div id="bta-pos" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--t3)"></div>
+    </div>
+    <div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--t3);margin-bottom:3px">
+        <span id="bta-prog-txt"></span><span id="bta-pct-done"></span>
+      </div>
+      <div style="background:var(--br);border-radius:4px;height:6px;cursor:pointer" onclick="btSeek(event,this)">
+        <div id="bta-prog-bar" style="background:linear-gradient(90deg,var(--pu),#8b5cf6);height:6px;border-radius:4px;width:0%;transition:width .08s"></div>
+      </div>
+    </div>
+    <div id="bta-chart" style="height:165px;margin-bottom:8px"></div>
+    <div style="font-size:9px;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--t3);margin-bottom:4px;letter-spacing:1px;text-transform:uppercase">거래 내역</div>
+    <div id="bta-log" style="min-height:56px;max-height:130px;overflow-y:auto;margin-bottom:12px;font-family:'JetBrains Mono',monospace"></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <button onclick="resetBtAnim()" style="background:var(--s2);border:1px solid var(--br);border-radius:5px;padding:5px 12px;cursor:pointer;font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--t2)">◀◀ 처음</button>
+      <button id="bta-playbtn" onclick="toggleBtAnim()" style="background:var(--pu);border:none;color:#fff;border-radius:5px;padding:5px 18px;cursor:pointer;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700">▶ 재생</button>
+      <select id="bta-speed" style="font-family:'JetBrains Mono',monospace;font-size:10px;border:1px solid var(--br);border-radius:5px;background:var(--s2);color:var(--t);padding:4px 8px;outline:none">
+        <option value="250">🐢 느림</option>
+        <option value="80" selected>🚶 보통</option>
+        <option value="25">🏃 빠름</option>
+        <option value="8">⚡ 초고속</option>
+      </select>
+      <select id="bta-step" style="font-family:'JetBrains Mono',monospace;font-size:10px;border:1px solid var(--br);border-radius:5px;background:var(--s2);color:var(--t);padding:4px 8px;outline:none">
+        <option value="1">1봉씩</option>
+        <option value="3" selected>3봉씩</option>
+        <option value="7">7봉씩</option>
+      </select>
+    </div>
+    <div style="margin-top:10px;font-size:9px;color:var(--t3);font-family:'JetBrains Mono',monospace;line-height:1.7;border-top:1px solid var(--br);padding-top:8px">
+      📌 매수신호(강한매수/분할매수) 진입 → 매도신호(강한매도/분할매도) 청산 방식 · 전체 기간 신호 적용<br>
+      슬리피지·수수료 미반영 · 참고용 시뮬레이션
+    </div>
+  </div>
+</div>
+
 <div class="layout">
   <div class="ca">
     <div class="ib2" id="infobar"><span style="color:var(--t3);font-size:11px;font-family:'JetBrains Mono',monospace">종목을 검색하면 분석이 시작됩니다</span></div>
@@ -1615,7 +1660,8 @@ function drawPanel(){
         </div>
       </div>`;
     })()}
-    <div class="ps" style="padding:10px 12px">
+    <div class="ps" style="padding:8px 12px;display:flex;flex-direction:column;gap:6px">
+      <button onclick="openBtAnimation()" style="width:100%;padding:9px;border-radius:6px;border:none;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.3px">⚡ 시그널 백테스트 애니메이션</button>
       <button onclick="openGemini()" style="width:100%;padding:9px;border-radius:6px;border:none;background:linear-gradient(135deg,#4285f4,#0f9d58);color:#fff;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.3px">✦ Gemini AI 종합 평가</button>
     </div>
   `;}
@@ -1891,6 +1937,263 @@ ${btSummary}
 6. 주요 리스크 요인 및 주의사항
 7. 종합 점수 (0~100점) 및 한줄 요약`;
 }
+
+// ══ SIGNAL-BASED BACKTEST ══
+function detectSigBt(rows,inds){
+  // 전체 기간 신호 검출 (백테스트 전용 — 90봉 제한 없음)
+  const{close:c,high:h,low:l,open:op,volume:v,dates}=rows;
+  const{R,B,s50,s200,M,vm,SQZ}=inds;
+  const sigs=[],n=c.length;
+  const add=(i,cat,nm)=>sigs.push({i,date:dates[i],category:cat,name:nm,price:c[i]});
+  for(let i=50;i<n;i++){
+    const r=R[i],rp=R[i-1],bu=B.up[i],bl=B.lo[i];
+    const m=M.ml[i],ms=M.sl[i],mp=M.ml[i-1],msp=M.sl[i-1];
+    const vr=v[i]&&vm[i]?v[i]/vm[i]:1;
+    const upTrend=s50[i]&&c[i]>s50[i]*0.97;
+    const dnTrend=s50[i]&&c[i]<s50[i]*1.03;
+    // 매수 신호
+    if(r&&r<30&&c[i]>op[i]&&vr>1.5) add(i,'sb','RSI 과매도 반등');
+    if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]<=s200[i-1]&&s50[i]>s200[i]) add(i,'sb','골든 크로스');
+    if(m&&ms&&mp&&msp&&mp<msp&&m>ms&&r&&r<55&&vr>1.3&&upTrend) add(i,'sb','MACD 상향+추세');
+    if(bl&&l[i]<bl*1.01&&c[i]>op[i]&&vr>2.0) add(i,'sb','BB 하단 반등');
+    if(SQZ?.sqz&&i>=2&&SQZ.sqz[i-1]===true&&SQZ.sqz[i]===false&&SQZ.mom[i]>0) add(i,'sb','스퀴즈 발사↑');
+    // 매도 신호
+    if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]>=s200[i-1]&&s50[i]<s200[i]) add(i,'ss2','데스 크로스');
+    if(m&&ms&&mp&&msp&&mp>msp&&m<ms&&r&&r>55&&vr>1.3&&dnTrend) add(i,'ss2','MACD 하향+추세');
+    if(bu&&h[i]>bu&&c[i]<op[i]&&vr>2.0) add(i,'ss2','BB 상단 거부');
+    if(r&&rp&&r>65&&r<rp-3&&m&&ms&&m<ms&&dnTrend) add(i,'ss2','RSI+MACD 복합매도');
+    if(SQZ?.sqz&&i>=2&&SQZ.sqz[i-1]===true&&SQZ.sqz[i]===false&&SQZ.mom[i]<=0) add(i,'ss2','스퀴즈 발사↓');
+  }
+  return sigs.sort((a,b)=>a.i-b.i);
+}
+
+function signalBacktest(rows,signals){
+  const{close,dates}=rows,n=close.length;
+  const INIT=10000;
+  let cash=INIT,pos=null;
+  const trades=[],equity=[INIT];
+  const sigByIdx={};
+  signals.forEach(s=>{if(!sigByIdx[s.i])sigByIdx[s.i]=[];sigByIdx[s.i].push(s);});
+  for(let i=0;i<n;i++){
+    const sg=sigByIdx[i]||[];
+    // 매도 먼저
+    if(pos){
+      const sel=sg.find(s=>s.category==='ss2'||s.category==='ps2');
+      if(sel){
+        const ep=close[i],ev=pos.shares*ep,pnl=ev-pos.invested;
+        cash=ev;
+        trades.push({type:'sell',entryIdx:pos.entryIdx,exitIdx:i,
+          entryDate:pos.entryDate,exitDate:dates[i],
+          entryPrice:pos.entryPrice,exitPrice:ep,
+          pnl,pnlPct:(ev/pos.invested-1)*100,bars:i-pos.entryIdx,signal:sel.name});
+        pos=null;
+      }
+    }
+    // 매수
+    if(!pos){
+      const buy=sg.find(s=>s.category==='sb'||s.category==='pb');
+      if(buy){
+        pos={entryIdx:i,entryDate:dates[i],entryPrice:close[i],
+          shares:cash/close[i],invested:cash};
+      }
+    }
+    equity.push(pos?pos.shares*close[i]:cash);
+  }
+  // 미결 포지션
+  if(pos){
+    const ep=close[n-1],ev=pos.shares*ep;
+    trades.push({type:'sell',entryIdx:pos.entryIdx,exitIdx:n-1,
+      entryDate:pos.entryDate,exitDate:dates[n-1],
+      entryPrice:pos.entryPrice,exitPrice:ep,
+      pnl:ev-pos.invested,pnlPct:(ev/pos.invested-1)*100,
+      bars:n-1-pos.entryIdx,signal:'기간 만료',open:true});
+    cash=ev;
+  }
+  const wins=trades.filter(t=>t.pnl>0),losses=trades.filter(t=>t.pnl<=0);
+  let peak=INIT,maxDD=0;
+  equity.forEach(v=>{if(v>peak)peak=v;const dd=(peak-v)/peak*100;if(dd>maxDD)maxDD=dd;});
+  return{trades,equity,INIT,finalEquity:cash,
+    totalPnl:(cash/INIT-1)*100,
+    winRate:trades.length?wins.length/trades.length*100:0,
+    wins:wins.length,losses:losses.length,maxDD};
+}
+
+// ══ BACKTEST ANIMATION ══
+let BT_DATA=null,_btTimer=null;
+
+function openBtAnimation(){
+  if(!SD||!SD._i||!SD._rows){alert('먼저 종목을 검색하세요.');return;}
+  const rows=SD._rows,inds=SD._i;
+  const btSigs=detectSigBt(rows,inds);
+  const result=signalBacktest(rows,btSigs);
+  BT_DATA={...result,rows,btSigs,frame:0,playing:false};
+  document.getElementById('btanim-modal').style.display='block';
+  _initBtModal();
+}
+function closeBtAnimation(){
+  _pauseBtAnim();
+  try{Plotly.purge('bta-chart');}catch{}
+  document.getElementById('btanim-modal').style.display='none';
+}
+function _initBtModal(){
+  const d=BT_DATA,rows=d.rows,n=rows.close.length;
+  const kr=SD.currency==='KRW';
+  const fmtV=v=>kr?Math.round(v).toLocaleString('ko-KR')+'원':'$'+v.toFixed(0);
+  const pC=v=>v>=0?'var(--gn)':'var(--rd)';
+  const ff="font-family:'JetBrains Mono',monospace";
+  document.getElementById('bta-info').innerHTML=`
+    <div style="${ff};font-size:10px;color:var(--t3);margin-bottom:6px">
+      ${SD.ticker} · ${rows.dates[0]} ~ ${rows.dates[n-1]} · ${n}봉 · 초기자금 ${fmtV(d.INIT)}
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;${ff};margin-bottom:8px;padding:8px;background:var(--s2);border-radius:6px;border:1px solid var(--br)">
+      <span>최종: <b style="color:${pC(d.totalPnl)}">${fmtV(d.finalEquity)}</b></span>
+      <span>수익률: <b style="color:${pC(d.totalPnl)}">${d.totalPnl>=0?'+':''}${d.totalPnl.toFixed(2)}%</b></span>
+      <span>거래: <b>${d.trades.length}회</b> (승${d.wins}/패${d.losses})</span>
+      <span>승률: <b style="color:${pC(d.winRate-50)}">${d.winRate.toFixed(0)}%</b></span>
+      <span>최대낙폭: <b style="color:var(--rd)">-${d.maxDD.toFixed(1)}%</b></span>
+    </div>`;
+  document.getElementById('bta-log').innerHTML='<div style="font-size:10px;color:var(--t3);text-align:center;padding:10px">▶ 재생 버튼을 눌러 시작하세요</div>';
+  document.getElementById('bta-playbtn').textContent='▶ 재생';
+  _drawBtChart(0,true);
+  _updateBtFrame(0);
+}
+function _drawBtChart(upTo,preview){
+  if(!BT_DATA)return;
+  const d=BT_DATA,rows=d.rows;
+  const bg='rgba(0,0,0,0)',gc='rgba(203,213,225,.45)',ac='#94a3b8';
+  const ff="'JetBrains Mono',monospace";
+  const traces=[];
+  if(preview&&d.equity.length>1){
+    traces.push({type:'scatter',mode:'lines',x:rows.dates,y:d.equity.slice(1),
+      line:{color:'rgba(150,150,150,0.15)',width:1},showlegend:false,hoverinfo:'skip'});
+  }
+  const curDates=rows.dates.slice(0,upTo+1);
+  const curEq=d.equity.slice(1,upTo+2);
+  const isProfit=(curEq[curEq.length-1]||d.INIT)>=d.INIT;
+  traces.push({type:'scatter',mode:'lines',x:curDates,y:curEq,
+    fill:'tozeroy',
+    fillcolor:isProfit?'rgba(5,150,105,0.07)':'rgba(220,38,38,0.07)',
+    line:{color:isProfit?'rgba(5,150,105,0.85)':'rgba(220,38,38,0.85)',width:2},
+    showlegend:false,hovertemplate:'%{x}<br>%{y:,.0f}<extra></extra>'});
+  // 매수/매도 마커
+  const bx=[],by=[],sx=[],sy=[];
+  d.trades.forEach(t=>{
+    if(t.entryIdx<=upTo){bx.push(rows.dates[t.entryIdx]);by.push(d.equity[t.entryIdx+1]||d.INIT);}
+    if(t.exitIdx<=upTo&&!t.open){sx.push(rows.dates[t.exitIdx]);sy.push(d.equity[t.exitIdx+1]||d.INIT);}
+  });
+  if(bx.length)traces.push({type:'scatter',mode:'markers',x:bx,y:by,
+    marker:{color:'#059669',symbol:'triangle-up',size:9,line:{color:'#fff',width:1}},
+    showlegend:false,hoverinfo:'skip'});
+  if(sx.length)traces.push({type:'scatter',mode:'markers',x:sx,y:sy,
+    marker:{color:'#dc2626',symbol:'triangle-down',size:9,line:{color:'#fff',width:1}},
+    showlegend:false,hoverinfo:'skip'});
+  const layout={paper_bgcolor:bg,plot_bgcolor:bg,margin:{t:4,r:55,b:22,l:6},
+    xaxis:{gridcolor:gc,tickfont:{family:ff,size:8,color:ac},color:ac,
+      type:'category',tickangle:-30,nticks:8,showgrid:true},
+    yaxis:{gridcolor:gc,tickfont:{family:ff,size:8,color:ac},color:ac,
+      side:'right',tickformat:',.0f',showgrid:true},
+    shapes:[{type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:d.INIT,y1:d.INIT,
+      line:{color:'rgba(100,100,100,0.35)',width:1,dash:'dot'}}],
+    hovermode:'x unified',showlegend:false,
+    hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',
+      font:{family:ff,size:9,color:'#0f172a'}}};
+  const el=document.getElementById('bta-chart');
+  if(el._btInit){Plotly.react('bta-chart',traces,layout,{responsive:true,displayModeBar:false});}
+  else{Plotly.newPlot('bta-chart',traces,layout,{responsive:true,displayModeBar:false});el._btInit=true;}
+}
+function _updateBtFrame(frame){
+  if(!BT_DATA)return;
+  const d=BT_DATA,rows=d.rows,n=rows.close.length;
+  const ff="font-family:'JetBrains Mono',monospace";
+  const kr=SD.currency==='KRW';
+  const fmtV=v=>kr?Math.round(v).toLocaleString('ko-KR')+'원':'$'+v.toFixed(0);
+  frame=Math.min(Math.max(0,frame),n-1);
+  d.frame=frame;
+  const curEq=d.equity[frame+1]||d.INIT;
+  const pct=(curEq/d.INIT-1)*100;
+  const pC=pct>=0?'var(--gn)':'var(--rd)';
+  // 진행바
+  const pctDone=Math.round(frame/(n-1)*100);
+  document.getElementById('bta-prog-bar').style.width=pctDone+'%';
+  document.getElementById('bta-prog-txt').textContent=rows.dates[frame]+' · '+( frame+1)+'/'+n+'봉';
+  document.getElementById('bta-pct-done').textContent=pctDone+'%';
+  // 잔고
+  document.getElementById('bta-balance').innerHTML=
+    `<span style="${ff};font-size:20px;font-weight:700;color:${pC}">${fmtV(curEq)}</span>`+
+    `<span style="${ff};font-size:12px;color:${pC};margin-left:10px">${pct>=0?'+':''}${pct.toFixed(2)}%</span>`;
+  // 포지션 상태
+  const inPos=d.trades.some(t=>t.entryIdx<=frame&&(t.exitIdx>frame||(t.open&&t.exitIdx<=frame)));
+  const openTrade=d.trades.find(t=>t.entryIdx<=frame&&t.exitIdx>frame);
+  let posText='💵 현금 대기 중';
+  if(openTrade){
+    const unrlz=(rows.close[frame]/openTrade.entryPrice-1)*100;
+    posText=`📈 매수 보유 중 (미실현 ${unrlz>=0?'+':''}${unrlz.toFixed(1)}%)`;
+  }
+  document.getElementById('bta-pos').textContent=posText;
+  // 거래 로그 (최근 8개, 신규 거래 강조)
+  const done=d.trades.filter(t=>t.exitIdx<=frame&&!t.open);
+  if(done.length){
+    const recent=done.slice(-8).reverse();
+    document.getElementById('bta-log').innerHTML=recent.map((t,idx)=>{
+      const win=t.pnl>0;
+      const isNew=idx===0&&t.exitIdx===frame;
+      return `<div style="display:flex;gap:8px;align-items:center;padding:4px 6px;border-radius:4px;margin-bottom:2px;`+
+        `background:${isNew?(win?'rgba(5,150,105,.12)':'rgba(220,38,38,.1)'):'transparent'};`+
+        `border:1px solid ${isNew?(win?'rgba(5,150,105,.3)':'rgba(220,38,38,.25)'):'transparent'}">
+        <span style="color:${win?'var(--gn)':'var(--rd)'};font-size:10px;font-weight:700">${win?'✓':'✗'}</span>
+        <span style="font-size:9px;color:var(--t2)">${t.entryDate}</span>
+        <span style="font-size:9px;color:var(--t3)">→${t.exitDate}</span>
+        <span style="font-size:8px;color:var(--t3)">${t.bars}봉</span>
+        <span style="font-size:9px;color:var(--t3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.signal}</span>
+        <span style="font-size:10px;font-weight:700;color:${win?'var(--gn)':'var(--rd)'}">${t.pnlPct>=0?'+':''}${t.pnlPct.toFixed(1)}%</span>
+      </div>`;
+    }).join('');
+  }
+}
+function toggleBtAnim(){
+  if(!BT_DATA)return;
+  if(BT_DATA.playing){_pauseBtAnim();return;}
+  BT_DATA.playing=true;
+  document.getElementById('bta-playbtn').textContent='⏸ 일시정지';
+  const speed=parseInt(document.getElementById('bta-speed').value)||80;
+  const step=parseInt(document.getElementById('bta-step').value)||3;
+  const n=BT_DATA.rows.close.length;
+  let lastChart=BT_DATA.frame;
+  _btTimer=setInterval(()=>{
+    if(BT_DATA.frame>=n-1){_pauseBtAnim();_drawBtChart(BT_DATA.frame,true);return;}
+    BT_DATA.frame=Math.min(BT_DATA.frame+step,n-1);
+    _updateBtFrame(BT_DATA.frame);
+    if(BT_DATA.frame-lastChart>=Math.max(4,step)||BT_DATA.frame===n-1){
+      _drawBtChart(BT_DATA.frame,true);lastChart=BT_DATA.frame;
+    }
+  },speed);
+}
+function _pauseBtAnim(){
+  if(_btTimer){clearInterval(_btTimer);_btTimer=null;}
+  if(BT_DATA)BT_DATA.playing=false;
+  const btn=document.getElementById('bta-playbtn');
+  if(btn)btn.textContent='▶ 재생';
+}
+function resetBtAnim(){
+  _pauseBtAnim();
+  if(!BT_DATA)return;
+  BT_DATA.frame=0;
+  _updateBtFrame(0);
+  _drawBtChart(0,true);
+}
+function btSeek(e,bar){
+  if(!BT_DATA)return;
+  const rect=bar.getBoundingClientRect();
+  const pct=(e.clientX-rect.left)/rect.width;
+  const n=BT_DATA.rows.close.length;
+  const f=Math.round(pct*(n-1));
+  _pauseBtAnim();
+  _updateBtFrame(f);
+  _drawBtChart(f,true);
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closeBtAnimation();}
+});
 
 async function runGemini(){
   if(!SD||!SD.ticker){alert('먼저 종목을 검색하세요.');return;}
