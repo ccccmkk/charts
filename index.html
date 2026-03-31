@@ -53,6 +53,7 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
 #rc{height:85px;border-top:1px solid var(--br)}
 #dc{height:85px;border-top:1px solid var(--br)}
 #ax{height:70px;border-top:1px solid var(--br)}
+#sqz{height:65px;border-top:1px solid var(--br)}
 #fib-ctrl{padding:4px 12px;background:var(--sf);border-bottom:1px solid var(--br);display:none;align-items:center;gap:8px;font-size:10px;font-family:'JetBrains Mono',monospace}
 #fib-ctrl input{width:90px;padding:3px 6px;border:1px solid var(--br);border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10px;background:var(--s2);color:var(--t);outline:none}
 #fib-ctrl input:focus{border-color:var(--bl)}
@@ -136,6 +137,8 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
   .ca{border-right:none;border-bottom:1px solid var(--br)}
   .panel{width:100%;max-height:none}
   #rc,#dc,#vc,#ax{height:70px}
+  #sqz{height:55px}
+  #mc{touch-action:none}
   .hints{display:none}
   .ak-wrap+.ak-wrap{display:none}
   header{gap:5px;padding:6px 10px}
@@ -296,8 +299,8 @@ function tryLogin(){
         <div class="ico">📈</div>
         <div class="txt">티커를 입력하고 Enter를 눌러주세요<br>미국: AAPL · TSLA · NVDA<br>한국: 005930.KS · 000660.KS</div>
       </div>
-      <div id="mc"></div><div id="vc"></div><div id="rc"></div><div id="dc"></div><div id="ax" style="display:none"></div>
-      <div class="zoom-hint">스크롤: 확대/축소 · 드래그: 이동 · 더블클릭: 초기화</div>
+      <div id="mc"></div><div id="vc"></div><div id="rc"></div><div id="dc"></div><div id="ax" style="display:none"></div><div id="sqz"></div>
+      <div class="zoom-hint">스크롤/핀치: 확대/축소 · 드래그: 이동 · 더블클릭: 초기화</div>
     </div>
   </div>
   <div class="panel" id="panel">
@@ -649,7 +652,7 @@ async function load(ticker){
   const isKR=ticker.endsWith('.KS')||ticker.endsWith('.KQ');
   const fallbackLabel=isKR?'공공데이터 API (한국주식)':'Finnhub';
   setOv('<div class="sp"></div><div class="txt" style="margin-top:4px"><b style="color:var(--t)">'+ticker+'</b> 로딩 중...</div><div class="prog"><div class="pg act" id="p1">⟳ Yahoo Finance 요청 중...</div><div class="pg" id="p2">○ Stooq (폴백1)</div><div class="pg" id="p3">○ '+fallbackLabel+' (폴백2)</div></div>');
-  document.getElementById('mc').innerHTML='';document.getElementById('rc').innerHTML='';document.getElementById('dc').innerHTML='';document.getElementById('vc').innerHTML='';document.getElementById('ax').innerHTML='';
+  document.getElementById('mc').innerHTML='';document.getElementById('rc').innerHTML='';document.getElementById('dc').innerHTML='';document.getElementById('vc').innerHTML='';document.getElementById('ax').innerHTML='';document.getElementById('sqz').innerHTML='';
   document.getElementById('panel').innerHTML='<div class="ep"><div class="sp"></div><div class="txt" style="margin-top:8px">분석 중...</div></div>';
   try{
     let result=null;
@@ -914,7 +917,9 @@ function detectSig(d,inds){
   const sigs=[],n=c.length;
   const add=(i,cat,nm,desc,str,ind)=>sigs.push({i,date:dates[i],category:cat,name:nm,desc,strength:str,price:c[i],ind:ind||[]});
 
-  for(let i=50;i<n;i++){
+  // 최근 90봉만 분석 — 과거 데이터 정확도 저하 방지
+  const SIG_START=Math.max(50,n-90);
+  for(let i=SIG_START;i<n;i++){
     const r=R[i],rp=R[i-1],p=c[i],pp=c[i-1],bu=B.up[i],bl=B.lo[i],bm=B.mid[i];
     const m=M.ml[i],ms=M.sl[i],mp=M.ml[i-1],msp=M.sl[i-1];
     const vr=v[i]&&vm[i]?v[i]/vm[i]:1;
@@ -1249,16 +1254,83 @@ function drawCharts(){
     }
   }
 
+  // ── 최근 매수/매도 신호 Entry 박스 ──
+  const entryAnno=[];
+  if(AS.length){
+    const latestBuy=AS.find(s=>(s.category==='sb'||s.category==='pb')&&s.i>=n_-50);
+    if(latestBuy){
+      const ep=latestBuy.price;
+      const tp=B.up[n_]?Math.max(B.up[n_],ep*1.05):ep*1.10;
+      const sl=ep*0.95;
+      const rr=ep!==sl?((tp-ep)/(ep-sl)).toFixed(1):'∞';
+      const barsAgo=n_-latestBuy.i;
+      entryAnno.push({
+        x:dates[latestBuy.i],y:low[latestBuy.i]*0.994,
+        xref:'x',yref:'y',xanchor:'left',yanchor:'top',
+        text:`▲ ${latestBuy.name}<br>ENTRY: ${fmt(ep)}<br>TP: ${fmt(tp)} (+${((tp/ep-1)*100).toFixed(1)}%)<br>SL: ${fmt(sl)} (-5%)<br>RR: 1:${rr}${barsAgo>0?' ('+barsAgo+'봉 전)':''}`,
+        showarrow:true,arrowhead:2,arrowsize:.8,
+        arrowcolor:'rgba(5,150,105,.8)',
+        bgcolor:'rgba(5,150,105,0.12)',
+        bordercolor:'rgba(5,150,105,.6)',
+        borderwidth:1,borderpad:5,
+        font:{family:ff,size:isMob?8:9,color:'#059669'},
+        align:'left',ax:isMob?30:50,ay:-35
+      });
+    }
+    const latestSell=AS.find(s=>(s.category==='ss2'||s.category==='ps2')&&s.i>=n_-50);
+    if(latestSell&&!(latestBuy&&latestSell.i<latestBuy.i)){
+      const ep=latestSell.price;
+      const tp=B.lo[n_]?Math.min(B.lo[n_],ep*0.95):ep*0.90;
+      const sl=ep*1.05;
+      const rr=ep!==sl?((ep-tp)/(sl-ep)).toFixed(1):'∞';
+      const barsAgo=n_-latestSell.i;
+      entryAnno.push({
+        x:dates[latestSell.i],y:high[latestSell.i]*1.006,
+        xref:'x',yref:'y',xanchor:'left',yanchor:'bottom',
+        text:`▼ ${latestSell.name}<br>ENTRY: ${fmt(ep)}<br>TP: ${fmt(tp)} (${((tp/ep-1)*100).toFixed(1)}%)<br>SL: ${fmt(sl)} (+5%)<br>RR: 1:${rr}${barsAgo>0?' ('+barsAgo+'봉 전)':''}`,
+        showarrow:true,arrowhead:2,arrowsize:.8,
+        arrowcolor:'rgba(220,38,38,.8)',
+        bgcolor:'rgba(220,38,38,0.10)',
+        bordercolor:'rgba(220,38,38,.5)',
+        borderwidth:1,borderpad:5,
+        font:{family:ff,size:isMob?8:9,color:'#dc2626'},
+        align:'left',ax:isMob?30:50,ay:35
+      });
+    }
+    // RSI 과열 경고
+    const lastR=R[n_];
+    if(lastR&&lastR>78){
+      entryAnno.push({
+        x:dates[n_],y:high[n_]*1.003,xref:'x',yref:'y',
+        xanchor:'right',yanchor:'bottom',
+        text:'⚠ 과열 경고 (비중축소)',showarrow:false,
+        bgcolor:'rgba(217,119,6,0.15)',bordercolor:'rgba(217,119,6,.5)',
+        borderwidth:1,borderpad:4,
+        font:{family:ff,size:9,color:'#d97706'},align:'center'
+      });
+    }
+    if(lastR&&lastR<25){
+      entryAnno.push({
+        x:dates[n_],y:low[n_]*0.997,xref:'x',yref:'y',
+        xanchor:'right',yanchor:'top',
+        text:'💎 극단 과매도 (분할매수 기회)',showarrow:false,
+        bgcolor:'rgba(5,150,105,0.12)',bordercolor:'rgba(5,150,105,.5)',
+        borderwidth:1,borderpad:4,
+        font:{family:ff,size:9,color:'#059669'},align:'center'
+      });
+    }
+  }
+
   const lo2={paper_bgcolor:bg,plot_bgcolor:bg,margin:{t:6,r:sFib?90:50,b:3,l:6},
     xaxis:{...ax,type:'category',showticklabels:false,rangeslider:{visible:false},autorange:true},
     yaxis:{...ax,side:'right',tickformat:',.0f'},
-    dragmode:'pan',
+    dragmode:isMob?'zoom':'pan',
     legend:{orientation:'h',x:0,y:1.02,xanchor:'left',bgcolor:'rgba(255,255,255,0)',font:{family:ff,size:8,color:ac}},
     hovermode:isMob?'closest':'x unified',
     hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',font:{family:ff,size:isMob?9:10,color:'#0f172a'},namelength:0},
     shapes:[...fibShapes,...vpShapes],
-    annotations:[...fibAnno,...vpAnno]};
-  Plotly.newPlot('mc',tr,lo2,{responsive:true,displayModeBar:'hover',scrollZoom:true,
+    annotations:[...fibAnno,...vpAnno,...entryAnno]};
+  Plotly.newPlot('mc',tr,lo2,{responsive:true,displayModeBar:isMob?false:'hover',scrollZoom:true,
     modeBarButtonsToRemove:['toImage','sendDataToCloud','select2d','lasso2d','autoScale2d','toggleSpikelines']});
 
   // ── Divergence markers ──
@@ -1352,9 +1424,46 @@ function drawCharts(){
     axEl.style.display='none';
   }
 
+  // ── Squeeze Momentum 패널 (TradingView LazyBear 스타일) ──
+  {
+    const sqzMom=SQZ.mom;
+    const sqzAct=SQZ.sqz;
+    const sqzBarColors=sqzMom.map((v,i)=>{
+      if(v==null)return 'rgba(0,0,0,0)';
+      if(sqzAct[i])return 'rgba(150,150,150,0.55)'; // 스퀴즈 ON = 회색
+      const pv=i>0&&sqzMom[i-1]!=null?sqzMom[i-1]:v;
+      if(v>0)return v>pv?'rgba(0,220,110,0.85)':'rgba(0,140,90,0.85)';  // 상승 모멘텀
+      return v<pv?'rgba(220,50,50,0.85)':'rgba(130,20,60,0.85)';         // 하락 모멘텀
+    });
+    // 스퀴즈 상태 점 (0선 위/아래 작은 마커)
+    const sqzDotY=sqzAct.map((s,i)=>s?(sqzMom[i]||0)>=0?0.00001:-0.00001:null);
+    const sqzDotC=sqzAct.map((s,i)=>{
+      if(!s)return 'rgba(0,0,0,0)';
+      const m=sqzMom[i]||0;
+      return m>=0?'rgba(200,200,0,0.9)':'rgba(150,0,150,0.9)';
+    });
+    Plotly.newPlot('sqz',[
+      {type:'bar',x:dates,y:sqzMom,marker:{color:sqzBarColors},
+       hovertemplate:'SQZ Mom: %{y:.4f}<extra></extra>',showlegend:false},
+      {type:'scatter',mode:'markers',x:dates,y:sqzDotY,
+       marker:{color:sqzDotC,size:5,symbol:'circle'},
+       hoverinfo:'skip',showlegend:false},
+    ],{paper_bgcolor:bg,plot_bgcolor:bg,margin:{t:2,r:50,b:18,l:6},
+      xaxis:{...ax,type:'category',tickangle:-30,nticks:8},
+      yaxis:{...ax,side:'right',zeroline:true,zerolinecolor:'rgba(120,120,120,0.5)',zerolinewidth:1.5},
+      shapes:[{type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:0,y1:0,
+        line:{color:'rgba(120,120,120,0.4)',width:1}}],
+      annotations:[{x:.01,y:.92,xref:'paper',yref:'paper',
+        text:'SQZ MOM  <span style="color:#00dc6e">▌</span>상승증가 <span style="color:#008c5a">▌</span>상승감소 <span style="color:#dc3232">▌</span>하락증가 <span style="color:#821432">▌</span>하락감소 <span style="color:#969696">▌</span>압축중',
+        font:{family:ff,size:7,color:ac},showarrow:false}],
+      hovermode:'x unified',showlegend:false,
+      hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',font:{family:ff,size:10,color:'#0f172a'}}},
+    {responsive:true,displayModeBar:false});
+  }
+
   const cw=document.querySelector('.cw'),_mob=window.innerWidth<=768;
-  const subtractH=sADX?300:230;
-  document.getElementById('mc').style.height=(_mob?Math.max(260,window.innerWidth*.55):Math.max(230,cw.clientHeight-subtractH))+'px';
+  const subtractH=sADX?365:295;
+  document.getElementById('mc').style.height=(_mob?Math.max(240,window.innerWidth*.5):Math.max(220,cw.clientHeight-subtractH))+'px';
 
   updateInfobar();
 }
@@ -1510,7 +1619,7 @@ function drawPanel(){
       <button onclick="openGemini()" style="width:100%;padding:9px;border-radius:6px;border:none;background:linear-gradient(135deg,#4285f4,#0f9d58);color:#fff;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.3px">✦ Gemini AI 종합 평가</button>
     </div>
   `;}
-window.addEventListener('resize',()=>{if(SD){const ids=['mc','rc','dc','vc'];if(sADX)ids.push('ax');ids.forEach(id=>Plotly.Plots.resize(id));}});
+window.addEventListener('resize',()=>{if(SD){const ids=['mc','rc','dc','vc','sqz'];if(sADX)ids.push('ax');ids.forEach(id=>Plotly.Plots.resize(id));}});
 
 // ══ SCREENER ══
 const SCR_UNIVERSE={
