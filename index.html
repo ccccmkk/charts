@@ -958,7 +958,7 @@ function orderFlowDelta(open,high,low,close,volume){
 // ══ SIGNALS ══
 function detectSig(d,inds){
   const{close:c,high:h,low:l,open:op,volume:v,dates}=d;
-  const{R,B,s20,s50,s200,M,ST,vm,CP,AVWAP,LSWEEP,SQZ,OFD,VP,DIV_R,DIV_M}=inds;
+  const{R,B,s20,s50,s200,M,ST,vm,CP,AVWAP,LSWEEP,SQZ,OFD,VP,DIV_R,DIV_M,ADX_IND}=inds;
   const sigs=[],n=c.length;
   const add=(i,cat,nm,desc,str,ind)=>sigs.push({i,date:dates[i],category:cat,name:nm,desc,strength:str,price:c[i],ind:ind||[]});
 
@@ -971,56 +971,61 @@ function detectSig(d,inds){
     // 추세 필터: MA50 기준
     const upTrend=s50[i]&&c[i]>s50[i]*0.97;
     const dnTrend=s50[i]&&c[i]<s50[i]*1.03;
+    // ADX 추세 강도 필터 — ADX>20이면 추세장, 이하면 횡보
+    const adxV=ADX_IND?.adx[i];
+    const isTrending=adxV!=null&&adxV>20;
 
     // ── 강한 매수: 다중 조건 필요 ──
-    if(r&&r<30&&c[i]>op[i]&&vr>1.5)
+    if(r&&r<30&&c[i]>op[i]&&vr>1.8)
       add(i,'sb','RSI 극단 과매도 반등',`RSI ${r.toFixed(1)} + 양봉 + 거래량 ${vr.toFixed(1)}x — 강한 매수 신호.`,3,['RSI','VOL']);
     if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]<=s200[i-1]&&s50[i]>s200[i])
       add(i,'sb','골든 크로스',`MA50(${s50[i].toFixed(0)}) MA200(${s200[i].toFixed(0)}) 상향 돌파.`,3,['MA50','MA200']);
-    if(m&&ms&&mp&&msp&&mp<msp&&m>ms&&r&&r<55&&vr>1.3&&upTrend)
-      add(i,'sb','MACD 상향 + 추세 정렬',`MACD 돌파 + MA50 위 + RSI ${r.toFixed(0)} + 거래량 ${vr.toFixed(1)}x.`,3,['MACD','MA50','VOL']);
-    if(bl&&l[i]<bl*1.01&&c[i]>op[i]&&vr>2.0)
+    // MACD 신호는 추세장(ADX>20)에서만
+    if(m&&ms&&mp&&msp&&mp<msp&&m>ms&&r&&r<55&&vr>1.8&&upTrend&&isTrending)
+      add(i,'sb','MACD 상향 + 추세 정렬',`MACD 돌파 + MA50 위 + RSI ${r.toFixed(0)} + 거래량 ${vr.toFixed(1)}x + ADX ${adxV?.toFixed(0)}.`,3,['MACD','MA50','VOL']);
+    if(bl&&l[i]<bl*1.01&&c[i]>op[i]&&vr>2.5)
       add(i,'sb','BB 하단 강세 반등',`BB(${bl.toFixed(0)}) 터치 + 양봉 + 거래량 ${vr.toFixed(1)}x.`,3,['BB','VOL']);
-    // 복합: RSI 과매도 + MACD 강세 전환
-    if(r&&r<35&&m&&ms&&mp&&msp&&mp<msp&&m>ms&&c[i]>op[i])
-      add(i,'pb','RSI+MACD 복합 매수',`RSI ${r.toFixed(0)} 과매도 구간 + MACD 강세 전환.`,2,['RSI','MACD']);
-    // RSI 극단 모멘텀 (추세 지속 가능성)
-    if(r&&r>80) add(i,'op','RSI 극단 모멘텀',`RSI ${r.toFixed(1)} — 강한 추세 지속 가능. 추격 시 분할.`,2,['RSI']);
+    // 복합: RSI 과매도 + MACD 강세 전환 — 추세장에서 더 신뢰도 높음
+    if(r&&r<35&&m&&ms&&mp&&msp&&mp<msp&&m>ms&&c[i]>op[i]&&vr>1.5)
+      add(i,'pb','RSI+MACD 복합 매수',`RSI ${r.toFixed(0)} 과매도 구간 + MACD 강세 전환 + 거래량 ${vr.toFixed(1)}x.`,2,['RSI','MACD']);
+    // RSI 극단 모멘텀: 추세장에서만
+    if(r&&r>80&&isTrending) add(i,'op','RSI 극단 모멘텀',`RSI ${r.toFixed(1)} + ADX ${adxV?.toFixed(0)} — 강한 추세 지속.`,2,['RSI']);
 
     // ── 강한 매도: 다중 조건 필요 ──
     if(s50[i]&&s200[i]&&s50[i-1]&&s200[i-1]&&s50[i-1]>=s200[i-1]&&s50[i]<s200[i])
       add(i,'ss2','데스 크로스',`MA50 MA200 하향 돌파.`,3,['MA50','MA200']);
-    if(m&&ms&&mp&&msp&&mp>msp&&m<ms&&r&&r>55&&vr>1.3&&dnTrend)
-      add(i,'ss2','MACD 하향 + 추세 정렬',`MACD 하향 돌파 + MA50 아래 + RSI ${r.toFixed(0)}.`,3,['MACD','MA50']);
-    if(bu&&h[i]>bu&&c[i]<op[i]&&vr>2.0)
+    // MACD 매도 신호도 추세장에서만
+    if(m&&ms&&mp&&msp&&mp>msp&&m<ms&&r&&r>55&&vr>1.8&&dnTrend&&isTrending)
+      add(i,'ss2','MACD 하향 + 추세 정렬',`MACD 하향 돌파 + MA50 아래 + RSI ${r.toFixed(0)} + ADX ${adxV?.toFixed(0)}.`,3,['MACD','MA50']);
+    if(bu&&h[i]>bu&&c[i]<op[i]&&vr>2.5)
       add(i,'ss2','BB 상단 거래량 거부',`BB(${bu.toFixed(0)}) + 음봉 + 거래량 ${vr.toFixed(1)}x.`,3,['BB','VOL']);
-    // RSI 과매수 + MACD 하락 복합 (추세 역전 시만)
-    if(r&&rp&&r>65&&r<rp-3&&m&&ms&&m<ms&&dnTrend)
-      add(i,'ss2','RSI+MACD 복합 매도',`RSI ${r.toFixed(0)} 반락 + MACD 약세 + MA50 아래.`,3,['RSI','MACD']);
+    // RSI+MACD 복합 매도: 추세장 + 거래량 확인
+    if(r&&rp&&r>65&&r<rp-3&&m&&ms&&m<ms&&dnTrend&&isTrending&&vr>1.5)
+      add(i,'ss2','RSI+MACD 복합 매도',`RSI ${r.toFixed(0)} 반락 + MACD 약세 + MA50 아래 + ADX ${adxV?.toFixed(0)}.`,3,['RSI','MACD']);
 
     // ── 위험 신호 ──
-    if(vr>2&&c[i]<op[i]&&(op[i]-c[i])/op[i]>0.03)
+    if(vr>2.5&&c[i]<op[i]&&(op[i]-c[i])/op[i]>0.03)
       add(i,'dg','대량 거래 급락 ⚠',`거래량 ${vr.toFixed(1)}x + 급락 ${(((c[i]-op[i])/op[i])*100).toFixed(1)}%.`,3,['VOL']);
     if(s200[i]&&pp>=s200[i]&&p<s200[i])
       add(i,'dg','MA200 하향 이탈 ⚠',`MA200(${s200[i].toFixed(0)}) 이탈.`,3,['MA200']);
-    if(bl&&p<bl&&vr>1.3)
+    if(bl&&p<bl&&vr>1.8)
       add(i,'dg','BB 하단 이탈 ⚠',`BB 하단(${bl.toFixed(0)}) 이탈 + 거래량 ${vr.toFixed(1)}x.`,3,['BB','VOL']);
     if(bu&&bl&&bm){const bw=(bu-bl)/bm,p5=(B.up[i-5]&&B.lo[i-5]&&B.mid[i-5])?(B.up[i-5]-B.lo[i-5])/B.mid[i-5]:bw+1;
       if(bw<0.06&&p5>bw) add(i,'op','BB 스퀴즈 — 폭발 직전',`BB 폭 ${(bw*100).toFixed(1)}% 수축.`,2,['BB']);}
-    if(vr>2.5&&c[i]>op[i]) add(i,'op','거래량 급증 + 양봉',`+${((vr-1)*100).toFixed(0)}% 거래량.`,2,['VOL']);
+    if(vr>3&&c[i]>op[i]) add(i,'op','거래량 급증 + 양봉',`+${((vr-1)*100).toFixed(0)}% 거래량.`,2,['VOL']);
 
-    // ── Anchored VWAP 신호 (거래량 기준 상향) ──
+    // ── Anchored VWAP 신호 — 거래량 기준 상향 ──
     if(AVWAP&&AVWAP[i]!=null&&AVWAP[i-1]!=null){
       const av=AVWAP[i],avp=AVWAP[i-1],pctAway=(c[i]-av)/av;
-      if(Math.abs(pctAway)<0.015&&c[i]>av&&c[i]>op[i]&&vr>1.5)
+      if(Math.abs(pctAway)<0.015&&c[i]>av&&c[i]>op[i]&&vr>2.0)
         add(i,'sb','AVWAP 지지 반등',`AVWAP(${av.toFixed(0)}) 지지 + 양봉 + 거래량 ${vr.toFixed(1)}x.`,3,['AVWAP','VOL']);
-      if(c[i]>av&&pp<=avp&&vr>1.5)
+      if(c[i]>av&&pp<=avp&&vr>2.0)
         add(i,'sb','AVWAP 상향 돌파',`AVWAP(${av.toFixed(0)}) 상향 돌파 + 거래량 ${vr.toFixed(1)}x.`,3,['AVWAP','VOL']);
-      if(Math.abs(pctAway)<0.015&&c[i]<av&&c[i]<op[i]&&vr>1.5)
+      if(Math.abs(pctAway)<0.015&&c[i]<av&&c[i]<op[i]&&vr>2.0)
         add(i,'ss2','AVWAP 저항 반락',`AVWAP(${av.toFixed(0)}) 저항 + 거래량 ${vr.toFixed(1)}x.`,3,['AVWAP','VOL']);
-      if(c[i]<av&&pp>=avp&&vr>1.5)
+      if(c[i]<av&&pp>=avp&&vr>2.0)
         add(i,'dg','AVWAP 하향 이탈 ⚠',`AVWAP(${av.toFixed(0)}) 하향 이탈 + 거래량 ${vr.toFixed(1)}x.`,3,['AVWAP']);
-      if(pctAway<-0.05)
+      if(pctAway<-0.05&&isTrending)
         add(i,'op','AVWAP 하방 괴리',`AVWAP 대비 ${(pctAway*100).toFixed(1)}% 하방. 되돌림 가능성.`,2,['AVWAP']);
     }
 
@@ -1029,9 +1034,9 @@ function detectSig(d,inds){
       const poc=VP.find(b=>b.isPOC);
       if(poc){
         const pocMid=(poc.y0+poc.y1)/2,pctPoc=(c[i]-pocMid)/pocMid;
-        if(Math.abs(pctPoc)<0.012&&c[i]>op[i]&&vr>1.5)
+        if(Math.abs(pctPoc)<0.012&&c[i]>op[i]&&vr>2.0)
           add(i,'sb','POC 지지 반등',`매물대 중심가(${pocMid.toFixed(0)}) 지지 + 거래량 ${vr.toFixed(1)}x.`,3,['VP','VOL']);
-        if(Math.abs(pctPoc)<0.012&&c[i]<op[i]&&vr>1.5)
+        if(Math.abs(pctPoc)<0.012&&c[i]<op[i]&&vr>2.0)
           add(i,'ss2','POC 저항 반락',`매물대 중심가(${pocMid.toFixed(0)}) 저항 + 거래량 ${vr.toFixed(1)}x.`,2,['VP','VOL']);
       }
     }
@@ -1046,16 +1051,17 @@ function detectSig(d,inds){
         add(i,'op','스퀴즈 압축 중',`BB 켈트너 채널 내부 — 폭발 임박.`,2,['SQZ']);
     }
 
-    // ── Order Flow Delta (거래량 기준 유지) ──
+    // ── Order Flow Delta — 추세장에서 신뢰도 향상 ──
     if(OFD&&i>=5){
       const cd=OFD.cumDelta,dl=OFD.delta;
-      if(c[i]<c[i-5]&&cd[i]>cd[i-5]&&dl[i]>0)
+      // OFD 다이버전스: 추세장에서만 유효
+      if(c[i]<c[i-5]&&cd[i]>cd[i-5]&&dl[i]>0&&isTrending)
         add(i,'pb','OFD 강세 다이버전스',`가격 하락 중 매수 델타 증가 — 매집 신호.`,3,['OFD']);
-      if(c[i]>c[i-5]&&cd[i]<cd[i-5]&&dl[i]<0)
+      if(c[i]>c[i-5]&&cd[i]<cd[i-5]&&dl[i]<0&&isTrending)
         add(i,'ps2','OFD 약세 다이버전스',`가격 상승 중 매도 델타 증가 — 분산 신호.`,3,['OFD']);
-      if(dl[i]>0&&vr>2&&c[i]>op[i])
+      if(dl[i]>0&&vr>2.5&&c[i]>op[i])
         add(i,'sb','강한 매수 오더플로우',`매수 델타 급증 + 거래량 ${vr.toFixed(1)}x.`,3,['OFD','VOL']);
-      if(dl[i]<0&&vr>2&&c[i]<op[i])
+      if(dl[i]<0&&vr>2.5&&c[i]<op[i])
         add(i,'ss2','강한 매도 오더플로우',`매도 델타 급증 + 거래량 ${vr.toFixed(1)}x.`,3,['OFD','VOL']);
     }
   }
@@ -1085,9 +1091,10 @@ function detectSig(d,inds){
     const cat=dr==='b'?'pb':dr==='s'?'ps2':'op';
     add(i,cat,'캔들: '+nm,nm+' 패턴.',1,['캔들']);}});
 
+  // 중복 억제: 같은 카테고리 5봉 이내 신호는 1개만
   const dk={};
   return sigs.sort((a,b)=>b.i-a.i).filter(s=>{
-    const k=s.category+'_'+Math.floor(s.i/4);
+    const k=s.category+'_'+Math.floor(s.i/5);
     return dk[k]?false:(dk[k]=1,true);
   });
 }
@@ -1149,7 +1156,7 @@ function process(){
   const VP_DATA=sVP?getVolumeProfile(high,low,close,volume):null;
   const DIV_R=findDivergence(close,R);
   const DIV_M=findDivergence(close,M.hist.map(v=>v??0));
-  const inds={R,B,s20,s50,s200,M,ST,vm,CP,AVWAP,LSWEEP,SQZ,OFD,VP:VP_DATA,DIV_R,DIV_M};
+  const inds={R,B,s20,s50,s200,M,ST,vm,CP,AVWAP,LSWEEP,SQZ,OFD,VP:VP_DATA,DIV_R,DIV_M,ADX_IND};
   const displaySD={...rows,ticker:SD.ticker,name:SD.name,currency:SD.currency,currentPrice:SD.currentPrice,previousClose:SD.previousClose};
   AS=detectSig(displaySD,inds);
   AS=backtestSignals(rows,AS);
