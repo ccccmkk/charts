@@ -1685,6 +1685,17 @@ function closeScreener(){document.getElementById('scr-modal').style.display='non
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeScreener();});
 
 async function fetchForScreener(ticker){
+  // 1. Yahoo via Cloudflare Worker (CORS 없음)
+  const base=getWorkerUrl().replace(/\/$/,'');
+  if(base){
+    try{
+      const text=await tryFetch(`${base}/${ticker}?range=3mo`,12000);
+      const result=parseYahooJson(JSON.parse(text));
+      if(result&&result.rows.close.length>=20)
+        return{rows:result.rows,ticker,name:result.name,currency:result.currency,currentPrice:result.currentPrice};
+    }catch{}
+  }
+  // 2. Stooq 폴백 (CORS 허용 환경 한정)
   const isKR=ticker.endsWith('.KS')||ticker.endsWith('.KQ');
   let sym=ticker.toLowerCase();
   if(isKR){sym=sym.replace(/\.(ks|kq)$/,'.kr');}
