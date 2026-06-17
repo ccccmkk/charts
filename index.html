@@ -220,6 +220,7 @@ function tryLogin(){
     <button class="ib" data-i="st" onclick="ti2('st')">SuperTrend</button>
     <button class="ib" data-i="obv" onclick="ti2('obv')">OBV</button>
     <button class="ib" data-i="adx" onclick="ti2('adx')">ADX</button>
+    <button class="ib" data-i="pred" onclick="ti2('pred')">예측</button>
   </div>
   <div class="ak-wrap">
     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -362,7 +363,7 @@ let CR='6mo', CG='D', CT='', sB=true, sM=true, sFib=false, SD=null, AS=[];
 let _sigExp=false;
 let fibHigh=null, fibLow=null;
 let RT_TIMER=null;
-let sST=false, sOBV=false, sADX=false, sVP=false;
+let sST=false, sOBV=false, sADX=false, sVP=false, sPRED=false;
 const RANGE_MO={'3mo':3,'6mo':6,'1y':12,'2y':24};
 const DEFAULT_FH_KEY='d70go89r01quosk9qikgd70go89r01quosk9qil0';
 function getKey(){return document.getElementById('ak').value.trim()||DEFAULT_FH_KEY;}
@@ -509,7 +510,8 @@ function ti2(x){
   else if(x==='st')sST=!sST;
   else if(x==='obv')sOBV=!sOBV;
   else if(x==='adx')sADX=!sADX;
-  const on=x==='bb'?sB:x==='ma'?sM:x==='fib'?sFib:x==='vp'?sVP:x==='st'?sST:x==='obv'?sOBV:sADX;
+  else if(x==='pred')sPRED=!sPRED;
+  const on=x==='bb'?sB:x==='ma'?sM:x==='fib'?sFib:x==='vp'?sVP:x==='st'?sST:x==='obv'?sOBV:x==='pred'?sPRED:sADX;
   document.querySelector('.ib[data-i="'+x+'"]').classList.toggle('on',on);
   if(x==='fib'){
     document.getElementById('fib-ctrl').style.display=sFib?'flex':'none';
@@ -1172,6 +1174,68 @@ function process(){
 }
 
 // ══ CHARTS ══
+function nextTradingDay(dateStr,n){
+  const d=new Date(dateStr);
+  const result=[];
+  let added=0;
+  while(added<n){
+    d.setDate(d.getDate()+1);
+    const dow=d.getDay();
+    if(dow!==0&&dow!==6){result.push(d.toISOString().slice(0,10));added++;}
+  }
+  return result;
+}
+function linearRegression(y){
+  const n=y.length,xs=Array.from({length:n},(_,i)=>i);
+  const mx=xs.reduce((a,b)=>a+b,0)/n, my=y.reduce((a,b)=>a+b,0)/n;
+  let num=0,den=0;
+  xs.forEach((x,i)=>{num+=(x-mx)*(y[i]-my);den+=(x-mx)**2;});
+  const slope=den?num/den:0;
+  const intercept=my-slope*mx;
+  return{slope,intercept};
+}
+function buildScenarios(rows,inds,fwdBars=20){
+  const{close,high,low,dates}=rows;
+  const n=close.length;
+  const lookback=Math.min(30,n);
+  const recentClose=close.slice(n-lookback);
+  const{slope,intercept}=linearRegression(recentClose);
+  // ATR over last 14 bars
+  const atrLen=Math.min(14,n-1);
+  let atrSum=0;
+  for(let i=n-atrLen;i<n;i++){
+    const tr=Math.max(high[i]-low[i],Math.abs(high[i]-close[i-1]),Math.abs(low[i]-close[i-1]));
+    atrSum+=tr;
+  }
+  const atr=atrSum/atrLen;
+  const lastClose=close[n-1];
+  // Compute probabilities from indicators
+  const{R,M,s50,ADX_IND,SQZ}=inds;
+  const ni=n-1;
+  let bullScore=0,bearScore=0;
+  const rsi=R[ni];
+  if(rsi!=null){if(rsi>55)bullScore+=2;else if(rsi<45)bearScore+=2;else bullScore+=0.5;}
+  if(M){const h=M.hist[ni];if(h!=null){if(h>0&&M.hist[ni-1]!=null&&h>M.hist[ni-1])bullScore+=2;else if(h<0&&M.hist[ni-1]!=null&&h<M.hist[ni-1])bearScore+=2;}}
+  if(s50&&s50[ni]!=null){if(lastClose>s50[ni])bullScore+=1.5;else bearScore+=1.5;}
+  if(ADX_IND){const adxV=ADX_IND.adx[ni];if(adxV>25){if(ADX_IND.diP[ni]>ADX_IND.diN[ni])bullScore+=2;else bearScore+=2;}}
+  if(slope>0)bullScore+=2;else bearScore+=2;
+  if(SQZ&&!SQZ.sqz[ni]){const m=SQZ.mom[ni];if(m!=null&&m>0)bullScore+=1;else if(m!=null&&m<0)bearScore+=1;}
+  const total=bullScore+bearScore+3; // base = neutral weight
+  const pBull=Math.round(bullScore/total*100);
+  const pBear=Math.round(bearScore/total*100);
+  const pBase=100-pBull-pBear;
+  // Build future dates
+  const futureDates=nextTradingDay(dates[n-1],fwdBars);
+  // Project base: extend linear regression slope from last close
+  const baseSlope=slope*0.7; // dampen
+  const bullFactor=1+(atr/lastClose)*0.5;
+  const bearFactor=1-(atr/lastClose)*0.5;
+  const basePrices=[lastClose,...futureDates.map((_,k)=>lastClose+baseSlope*(k+1))];
+  const bullPrices=[lastClose,...futureDates.map((_,k)=>(lastClose+baseSlope*(k+1))*Math.pow(bullFactor,((k+1)/fwdBars)))];
+  const bearPrices=[lastClose,...futureDates.map((_,k)=>(lastClose+baseSlope*(k+1))*Math.pow(bearFactor,((k+1)/fwdBars)))];
+  const allDates=[dates[n-1],...futureDates];
+  return{allDates,basePrices,bullPrices,bearPrices,pBull,pBase,pBear};
+}
 function drawCharts(){
   const rows=SD._rows;
   const{close,high,low,open,volume,dates}=rows;
@@ -1273,6 +1337,46 @@ function drawCharts(){
       text:texts
     });
   });
+
+  // ── 가격 예측 시나리오 ──
+  const predAnno=[];
+  if(sPRED&&SD._i){
+    const sc=buildScenarios(rows,SD._i,20);
+    const{allDates,basePrices,bullPrices,bearPrices,pBull,pBase,pBear}=sc;
+    // bull upper fill area (bull to bear)
+    tr.push({type:'scatter',mode:'lines',x:allDates,y:bullPrices,
+      line:{color:'rgba(5,150,105,0)',width:0},showlegend:false,hoverinfo:'skip',fill:null});
+    tr.push({type:'scatter',mode:'lines',x:allDates,y:bearPrices,
+      line:{color:'rgba(220,38,38,0)',width:0},
+      fill:'tonexty',fillcolor:'rgba(99,102,241,0.08)',
+      showlegend:false,hoverinfo:'skip'});
+    // Base scenario
+    tr.push({type:'scatter',mode:'lines',x:allDates,y:basePrices,
+      line:{color:'rgba(148,163,184,0.9)',width:2,dash:'dash'},
+      showlegend:false,hovertemplate:'기준: %{y:,.2f}<extra></extra>',name:'기준'});
+    // Bull scenario
+    tr.push({type:'scatter',mode:'lines',x:allDates,y:bullPrices,
+      line:{color:'rgba(5,150,105,0.85)',width:1.5,dash:'dot'},
+      showlegend:false,hovertemplate:'강세: %{y:,.2f}<extra></extra>',name:'강세'});
+    // Bear scenario
+    tr.push({type:'scatter',mode:'lines',x:allDates,y:bearPrices,
+      line:{color:'rgba(220,38,38,0.85)',width:1.5,dash:'dot'},
+      showlegend:false,hovertemplate:'약세: %{y:,.2f}<extra></extra>',name:'약세'});
+    // Annotations at end of each scenario line
+    const lastDate=allDates[allDates.length-1];
+    predAnno.push({x:lastDate,y:bullPrices[bullPrices.length-1],xref:'x',yref:'y',
+      text:`📈 강세 ${pBull}%`,showarrow:false,xanchor:'left',
+      font:{family:ff,size:9,color:'#059669'},
+      bgcolor:'rgba(5,150,105,0.1)',borderpad:3});
+    predAnno.push({x:lastDate,y:basePrices[basePrices.length-1],xref:'x',yref:'y',
+      text:`➡️ 중립 ${pBase}%`,showarrow:false,xanchor:'left',
+      font:{family:ff,size:9,color:'#94a3b8'},
+      bgcolor:'rgba(148,163,184,0.1)',borderpad:3});
+    predAnno.push({x:lastDate,y:bearPrices[bearPrices.length-1],xref:'x',yref:'y',
+      text:`📉 약세 ${pBear}%`,showarrow:false,xanchor:'left',
+      font:{family:ff,size:9,color:'#dc2626'},
+      bgcolor:'rgba(220,38,38,0.1)',borderpad:3});
+  }
 
   // ── 피보나치 ──
   const fibShapes=[],fibAnno=[];
@@ -1386,7 +1490,7 @@ function drawCharts(){
     hovermode:isMob?'closest':'x unified',
     hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',font:{family:ff,size:isMob?9:10,color:'#0f172a'},namelength:0},
     shapes:[...fibShapes,...vpShapes],
-    annotations:[...fibAnno,...vpAnno,...entryAnno]};
+    annotations:[...fibAnno,...vpAnno,...entryAnno,...predAnno]};
   Plotly.newPlot('mc',tr,lo2,{responsive:true,displayModeBar:isMob?false:'hover',scrollZoom:true,
     modeBarButtonsToRemove:['toImage','sendDataToCloud','select2d','lasso2d','autoScale2d','toggleSpikelines']});
 
