@@ -4,13 +4,48 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>📈 SIGNALLAB</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.26.0/plotly.min.js"></script>
+<script>
+// Plotly 로딩 — 이 앱이 쓰는 트레이스는 candlestick·scatter·bar 뿐이라
+// finance 부분 번들이면 충분하다. 전체 번들(약 3.5MB)의 1/3 수준이라
+// 모바일 첫 로딩에서 체감 차이가 크다. 동기 로딩이던 것을 async로 바꿔
+// 첫 화면 렌더를 막지 않게 했고, 부분 번들을 못 받으면 전체로 되돌린다.
+(function(){
+  var CDN='https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.26.0/';
+  function add(file,onerr){
+    var el=document.createElement('script');
+    el.src=CDN+file;el.async=true;el.onerror=onerr;
+    document.head.appendChild(el);
+  }
+  add('plotly-finance.min.js',function(){add('plotly.min.js',function(){window.__plotlyFailed=true;});});
+})();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f1f5f9;--sf:#ffffff;--s2:#f8fafc;--br:#e2e8f0;--b2:#cbd5e0;--gn:#059669;--rd:#dc2626;--bl:#2563eb;--or:#d97706;--pu:#7c3aed;--t:#0f172a;--t2:#475569;--t3:#94a3b8}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--t);font-family:'Inter',sans-serif;height:100vh;overflow:hidden}
-header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(--sf);border-bottom:1px solid var(--br);z-index:2;flex-wrap:wrap;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+/* 배경 — 단색 회색 대신 은은한 광원 두 개를 깔아 깊이를 준다.
+   background-attachment:fixed는 iOS에서 심하게 끊겨서 고정 레이어로 뺐다. */
+body::before{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(1100px 620px at 12% -12%, rgba(37,99,235,.16), transparent 62%),
+    radial-gradient(900px 520px at 105% -5%, rgba(124,58,237,.14), transparent 58%),
+    radial-gradient(760px 760px at 50% 112%, rgba(5,150,105,.09), transparent 62%),
+    linear-gradient(180deg,#f4f7fb 0%,#e9eef6 55%,#e2e9f3 100%);
+}
+header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:rgba(255,255,255,.82);backdrop-filter:blur(14px) saturate(1.6);-webkit-backdrop-filter:blur(14px) saturate(1.6);border-bottom:1px solid var(--br);z-index:20;flex-wrap:wrap;box-shadow:0 1px 3px rgba(15,23,42,.05)}
+.icon-btn{display:none;background:var(--s2);border:1px solid var(--br);border-radius:8px;width:36px;height:36px;font-size:15px;cursor:pointer;color:var(--t2);flex-shrink:0;line-height:1}
+.icon-btn:active{background:var(--br)}
+/* 데스크톱: 헤더 아래 보조 툴바. 모바일에서는 하단 시트가 된다.
+   헤더 안에 두면 헤더의 backdrop-filter가 fixed의 기준을 가로채서
+   시트가 화면 하단이 아니라 헤더에 붙어버린다 — 그래서 헤더 밖에 있다. */
+#ctrl-sheet{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 12px;
+  background:rgba(255,255,255,.66);border-bottom:1px solid var(--br)}
+.sheet-body{display:contents}
+.sheet-head,.sheet-label,.sheet-hint{display:none}
+#sheet-scrim{display:none}
+#tabbar{display:none}
 .logo{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--bl);white-space:nowrap}
 .logo span{color:var(--t3)}
 .sw{display:flex;align-items:center;background:var(--s2);border:1px solid var(--br);border-radius:7px;padding:0 10px;gap:6px;flex:1;min-width:180px;max-width:340px;transition:border-color .2s;position:relative}
@@ -45,7 +80,7 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
 .ib[data-i=obv].on{border-color:rgba(168,85,247,.45);color:#9333ea;background:rgba(168,85,247,.08)}
 .ib[data-i=adx].on{border-color:rgba(236,72,153,.45);color:#db2777;background:rgba(236,72,153,.08)}
 .layout{display:flex;height:calc(100vh - 50px)}
-.ca{flex:1;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--br)}
+.ca{flex:1;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--br);background:rgba(255,255,255,.72)}
 .ib2{display:flex;align-items:center;gap:10px;padding:5px 12px;background:var(--sf);border-bottom:1px solid var(--br);flex-shrink:0;min-height:36px;flex-wrap:wrap}
 .cw{flex:1;position:relative;display:flex;flex-direction:column;overflow:hidden}
 #mc{flex:1;min-height:240px}
@@ -59,7 +94,7 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
 #fib-ctrl input:focus{border-color:var(--bl)}
 #fib-ctrl button{font-size:9px;padding:3px 8px;border:1px solid var(--br);border-radius:4px;background:var(--s2);cursor:pointer;color:var(--t2);font-family:'JetBrains Mono',monospace}
 #fib-ctrl button:hover{background:var(--br)}
-.ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:5;background:rgba(241,245,249,.97)}
+.ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:5;background:rgba(248,250,253,.94);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 .ov .ico{font-size:36px;opacity:.2}
 .ov .txt{font-size:12px;color:var(--t3);text-align:center;line-height:1.8}
 .sp{width:24px;height:24px;border:2px solid var(--br);border-top-color:var(--bl);border-radius:50%;animation:spin .8s linear infinite}
@@ -69,7 +104,7 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
 .pg.done{color:var(--gn)}.pg.act{color:var(--bl)}
 .eb{background:rgba(220,38,38,.05);border:1px solid rgba(220,38,38,.2);border-radius:8px;padding:14px 18px;text-align:center;color:var(--rd);font-size:12px;max-width:300px}
 .eb small{display:block;margin-top:6px;color:var(--t2);font-size:10px}
-.panel{width:285px;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto;background:var(--sf)}
+.panel{width:285px;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto;background:rgba(255,255,255,.85)}
 .ps{border-bottom:1px solid var(--br);padding:10px 12px}
 .pt{font-size:9px;font-weight:700;letter-spacing:2px;color:var(--t3);text-transform:uppercase;margin-bottom:7px;font-family:'JetBrains Mono',monospace}
 .ss{display:flex;flex-direction:column;gap:3px}
@@ -132,22 +167,83 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
 .zoom-hint{position:absolute;bottom:92px;right:8px;font-size:8px;color:var(--t3);font-family:'JetBrains Mono',monospace;pointer-events:none;z-index:3;opacity:.6;line-height:1.6;text-align:right}
 .badge{display:inline-block;font-size:9px;font-family:'JetBrains Mono',monospace;padding:2px 6px;background:var(--s2);border:1px solid var(--br);border-radius:3px;color:var(--t2)}
 @media(max-width:768px){
-  body{height:auto;overflow-y:auto;overflow-x:hidden}
+  body{height:auto;overflow-y:auto;overflow-x:hidden;padding-bottom:70px}
   .layout{flex-direction:column;height:auto}
   .ca{border-right:none;border-bottom:1px solid var(--br)}
   .panel{width:100%;max-height:none}
   #rc,#dc,#vc,#ax{height:70px}
   #sqz{height:55px}
   #mc{touch-action:none}
-  .hints{display:none}
-  .ak-wrap+.ak-wrap{display:none}
-  header{gap:5px;padding:6px 10px}
-  .sw{max-width:none;flex:1 1 150px}
   .ig{grid-template-columns:repeat(4,1fr)}
   .zoom-hint{display:none}
-}
-@media(max-width:480px){
-  .ibs{display:none}
+
+  /* 배경이 보이도록 콘텐츠를 카드로 띄운다 — 종전엔 흰 판이 화면을
+     끝에서 끝까지 덮어 배경이 아예 안 보였다. */
+  .ca{border-bottom:none;border-radius:0 0 18px 18px;overflow:hidden;
+      box-shadow:0 8px 26px rgba(15,23,42,.07);background:rgba(255,255,255,.9)}
+  .panel{background:transparent;padding:12px 10px 0;gap:10px}
+  .ps{background:rgba(255,255,255,.9);border:1px solid var(--br);border-radius:14px;
+      padding:12px 14px;box-shadow:0 2px 10px rgba(15,23,42,.05)}
+
+  /* 헤더는 검색만 남기고 고정. 나머지 컨트롤은 전부 하단 시트로 내린다. */
+  header{gap:6px;padding:8px 10px;position:sticky;top:0}
+  .sw{max-width:none;flex:1 1 150px}
+  .icon-btn{display:flex;align-items:center;justify-content:center}
+  .scan-btn{display:none}
+
+  /* ── 컨트롤 시트 ──
+     지표 토글은 원래 480px 이하에서 display:none 이었다. 8개 기능이
+     모바일에서 통째로 사라졌던 것. 이제 시트 안에 2열 그리드로 들어간다.
+     DOM은 하나뿐이라(데스크톱은 display:contents) 토글 상태가 어긋나지 않는다. */
+  #ctrl-sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:60;
+    /* align-items는 데스크톱 규칙(center)이 남으면 내용이 쪼그라든다 */
+    display:flex;flex-direction:column;align-items:stretch;max-height:80vh;
+    background:var(--sf);border-top:1px solid var(--br);
+    border-radius:18px 18px 0 0;box-shadow:0 -10px 36px rgba(15,23,42,.20);
+    transform:translateY(101%);transition:transform .26s cubic-bezier(.32,.72,0,1);
+  }
+  #ctrl-sheet.open{transform:translateY(0)}
+  .sheet-head{display:flex;align-items:center;justify-content:space-between;
+    padding:14px 16px 10px;border-bottom:1px solid var(--br);
+    font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--t2)}
+  #ctrl-sheet{padding:0;background:var(--sf);border-bottom:none}
+  .sheet-body{display:flex;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:12px 16px calc(18px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;gap:7px}
+  .sheet-label{display:block;font-family:'JetBrains Mono',monospace;font-size:9px;
+    font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--t3);margin-top:10px}
+  .sheet-label:first-child{margin-top:0}
+  .sheet-hint{display:inline;font-weight:500;letter-spacing:0;text-transform:none;
+    margin-left:6px;color:var(--t3);font-size:9px}
+  #sheet-scrim{display:block;position:fixed;inset:0;background:rgba(15,23,42,.45);
+    z-index:55;opacity:0;pointer-events:none;transition:opacity .26s}
+  #sheet-scrim.open{opacity:1;pointer-events:auto}
+
+  /* 시트 안에서는 손가락에 맞는 크기로 */
+  .hints{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .h{padding:11px 6px;font-size:11px;text-align:center}
+  .btn-group{width:100%;padding:3px}
+  .rb{flex:1;padding:10px 6px;font-size:12px}
+  .ibs{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+  .ib{padding:12px 10px;font-size:11.5px;text-align:center}
+  .ak-wrap{width:100%}
+  .ak-wrap+.ak-wrap{display:flex}
+
+  /* ── 하단 액션바 ──
+     백테스트·AI 버튼이 우측 패널 맨 아래에 있어서 모바일에서는
+     차트를 한참 스크롤해야 닿았다. 엄지 위치로 끌어올린다. */
+  #tabbar{display:grid;grid-template-columns:repeat(4,1fr);
+    position:fixed;left:0;right:0;bottom:0;z-index:50;
+    background:rgba(255,255,255,.93);backdrop-filter:blur(16px) saturate(1.6);
+    -webkit-backdrop-filter:blur(16px) saturate(1.6);
+    border-top:1px solid var(--br);padding:5px 4px calc(5px + env(safe-area-inset-bottom))}
+  #tabbar button{background:none;border:none;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:3px;min-height:46px;
+    font-family:'Inter',sans-serif;font-size:9.5px;font-weight:600;
+    color:var(--t2);padding:5px 2px;cursor:pointer}
+  #tabbar button span{font-size:17px;line-height:1}
+  #tabbar button:active{color:var(--bl);transform:scale(.94)}
 }
 .qm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:5px;margin-bottom:8px}
 .qm{background:var(--s2);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-family:'JetBrains Mono',monospace}
@@ -182,6 +278,16 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
     <button class="go-btn" onclick="const t=document.getElementById('ti').value.trim().toUpperCase();if(t){closeDrop();load(t)}">→</button>
     <div class="search-drop" id="sd"></div>
   </div>
+  <button class="icon-btn" id="sheet-open" onclick="toggleSheet()" aria-label="지표 및 설정" title="지표·설정">⚙</button>
+  <button class="go-btn scan-btn" style="background:var(--pu);flex-shrink:0" onclick="openScreener()">📡 스캔</button>
+</header>
+  <div id="ctrl-sheet">
+   <div class="sheet-head">
+     <span>지표 · 기간 · 설정</span>
+     <button class="icon-btn" onclick="toggleSheet(false)" aria-label="닫기">✕</button>
+   </div>
+   <div class="sheet-body">
+  <div class="sheet-label">빠른 종목</div>
   <div class="hints">
     <span class="h" onclick="qs('AAPL')">AAPL</span>
     <span class="h" onclick="qs('TSLA')">TSLA</span>
@@ -189,17 +295,20 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
     <span class="h" onclick="qs('005930.KS')">삼성전자</span>
     <span class="h" onclick="qs('000660.KS')">SK하이닉스</span>
   </div>
+  <div class="sheet-label">기간</div>
   <div class="btn-group" id="range-btns">
     <button class="rb" onclick="setR('3mo')">3M</button>
     <button class="rb active" onclick="setR('6mo')">6M</button>
     <button class="rb" onclick="setR('1y')">1Y</button>
     <button class="rb" onclick="setR('2y')">2Y</button>
   </div>
+  <div class="sheet-label">봉 주기</div>
   <div class="btn-group" id="gran-btns">
     <button class="rb active" onclick="setG('D')">일봉</button>
     <button class="rb" onclick="setG('W')">주봉</button>
     <button class="rb" onclick="setG('M')">월봉</button>
   </div>
+  <div class="sheet-label">지표 <span class="sheet-hint">탭하면 차트에 켜고 끕니다</span></div>
   <div class="ibs">
     <button class="ib on" data-i="bb" onclick="ti2('bb')">BB밴드</button>
     <button class="ib on" data-i="ma" onclick="ti2('ma')">이동평균</button>
@@ -210,6 +319,7 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
     <button class="ib" data-i="adx" onclick="ti2('adx')">ADX</button>
     <button class="ib" data-i="pred" onclick="ti2('pred')">예측</button>
   </div>
+  <div class="sheet-label">데이터 소스</div>
   <div class="ak-wrap">
     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
     <input id="ak" placeholder="Finnhub API Key" oninput="saveKey(this.value)">
@@ -221,8 +331,16 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
     <input id="wk" placeholder="Cloudflare Worker URL (Yahoo용)" oninput="saveWorkerUrl(this.value)">
     <a href="https://workers.cloudflare.com" target="_blank" class="ak-link">설정↗</a>
   </div>
-  <button class="go-btn" style="background:var(--pu);flex-shrink:0" onclick="openScreener()">📡 스캔</button>
-</header>
+   </div>
+  </div>
+<div id="sheet-scrim" onclick="toggleSheet(false)"></div>
+<!-- 모바일 전용 하단 액션바 — 백테스트·AI가 패널 맨 아래 묻혀 있어 손이 닿지 않았다 -->
+<nav id="tabbar">
+  <button onclick="toggleSheet()"><span>⚙</span>지표·설정</button>
+  <button onclick="openScreener()"><span>📡</span>스캔</button>
+  <button onclick="openBtAnimation()"><span>⚡</span>백테스트</button>
+  <button onclick="openGemini()"><span>✦</span>AI 평가</button>
+</nav>
 <div id="fib-ctrl">
   <span style="color:var(--t2)">피보나치 설정:</span>
   <span style="color:var(--t3)">고점</span>
@@ -488,6 +606,13 @@ window.addEventListener('load',()=>{
   const k=localStorage.getItem('fhKey')||DEFAULT_FH_KEY;document.getElementById('ak').value=k;
   const w=localStorage.getItem('cfWorkerUrl');if(w)document.getElementById('wk').value=w;
 });
+function toggleSheet(force){
+  const sheet=document.getElementById('ctrl-sheet'),scrim=document.getElementById('sheet-scrim');
+  const open=force===undefined?!sheet.classList.contains('open'):!!force;
+  sheet.classList.toggle('open',open);
+  scrim.classList.toggle('open',open);
+  document.body.style.overflow=open?'hidden':'';   // 시트 열린 동안 배경 스크롤 잠금
+}
 function setR(r){CR=r;document.querySelectorAll('#range-btns .rb').forEach((b,i)=>b.classList.toggle('active',['3mo','6mo','1y','2y'][i]===r));if(CT)load(CT);}
 function setG(g){CG=g;document.querySelectorAll('#gran-btns .rb').forEach((b,i)=>b.classList.toggle('active',['D','W','M'][i]===g));if(SD)process();}
 function ti2(x){
@@ -522,7 +647,7 @@ function resetFib(){
   document.getElementById('fib-l').value='';
   if(SD)drawCharts();
 }
-function qs(t){document.getElementById('ti').value=t;load(t);}
+function qs(t){toggleSheet(false);document.getElementById('ti').value=t;load(t);}
 document.getElementById('ti').addEventListener('keydown',e=>{if(e.key==='Enter'){const t=e.target.value.trim().toUpperCase();if(t)load(t);}});
 
 // ══ AGGREGATE (주봉/월봉) ══
@@ -741,13 +866,36 @@ function startRealtime(){
 }
 
 // ══ INDICATORS ══
-const sma=(a,n)=>a.map((_,i)=>i<n-1?null:a.slice(i-n+1,i+1).reduce((s,v)=>s+v,0)/n);
+// 전체 배열 최대/최소 — Math.max(...arr)는 인자 스프레드라 봉 수가 많으면
+// 느리고 스택도 위험하다. 루프가 안전하고 빠르다.
+function _arrMax(a){let m=-Infinity;for(let i=0;i<a.length;i++)if(a[i]>m)m=a[i];return m;}
+function _arrMin(a){let m=Infinity;for(let i=0;i<a.length;i++)if(a[i]<m)m=a[i];return m;}
+// 슬라이딩 윈도 최대/최소 (단조 덱, O(n)). off=0이면 현재 봉 포함, off=1이면 직전 봉까지.
+function _slideMax(a,w,off){
+  const n=a.length,out=new Array(n).fill(null),dq=new Int32Array(n);let hd=0,tl=0;
+  for(let i=0;i<n;i++){const j=i-off;if(j<0)continue;
+    while(tl>hd&&a[dq[tl-1]]<=a[j])tl--;dq[tl++]=j;
+    while(dq[hd]<=j-w)hd++;
+    if(j>=w-1)out[i]=a[dq[hd]];}
+  return out;}
+function _slideMin(a,w,off){
+  const n=a.length,out=new Array(n).fill(null),dq=new Int32Array(n);let hd=0,tl=0;
+  for(let i=0;i<n;i++){const j=i-off;if(j<0)continue;
+    while(tl>hd&&a[dq[tl-1]]>=a[j])tl--;dq[tl++]=j;
+    while(dq[hd]<=j-w)hd++;
+    if(j>=w-1)out[i]=a[dq[hd]];}
+  return out;}
+// 롤링 합 — 봉마다 slice+reduce 하던 것을 O(n)으로
+const sma=(a,n)=>{const r=new Array(a.length).fill(null);let s=0;
+  for(let i=0;i<a.length;i++){s+=a[i];if(i>=n)s-=a[i-n];if(i>=n-1)r[i]=s/n;}return r;};
 function ema(a,n){const k=2/(n+1),r=Array(a.length).fill(null);let p=null;
   for(let i=0;i<a.length;i++){if(a[i]==null)continue;if(p==null){p=a[i];r[i]=p;continue;}p=a[i]*k+p*(1-k);r[i]=p;}return r;}
-function bollinger(c,n=20,k=2){const mid=sma(c,n),up=[],lo=[];
-  for(let i=0;i<c.length;i++){if(!mid[i]){up.push(null);lo.push(null);continue;}
-    const s=c.slice(i-n+1,i+1),mn=s.reduce((a,b)=>a+b,0)/n,sd=Math.sqrt(s.reduce((a,b)=>a+(b-mn)**2,0)/n);
-    up.push(mn+k*sd);lo.push(mn-k*sd);}return{mid,up,lo};}
+function bollinger(c,n=20,k=2){const mid=sma(c,n),len=c.length;
+  const up=new Array(len).fill(null),lo=new Array(len).fill(null);
+  for(let i=n-1;i<len;i++){const mn=mid[i];let q=0;
+    for(let j=i-n+1;j<=i;j++){const d=c[j]-mn;q+=d*d;}
+    const sd=Math.sqrt(q/n);up[i]=mn+k*sd;lo[i]=mn-k*sd;}
+  return{mid,up,lo};}
 function rsi(c,n=14){const r=Array(c.length).fill(null);let ag=0,al=0;
   for(let i=1;i<=n;i++){const d=c[i]-c[i-1];if(d>0)ag+=d;else al-=d;}ag/=n;al/=n;
   r[n]=100-100/(1+(al===0?Infinity:ag/al));
@@ -757,10 +905,11 @@ function macd(c,f=12,s=26,sg=9){
   const ef=ema(c,f),es=ema(c,s),ml=ef.map((v,i)=>v==null||es[i]==null?null:v-es[i]);
   const sl=ema(ml.map(v=>v??0),sg);
   return{ml,sl,hist:ml.map((v,i)=>v==null||sl[i]==null?null:v-sl[i])};}
-function stoch(h,l,c,kp=14,dp=3){const k=[];
-  for(let i=0;i<c.length;i++){if(i<kp-1){k.push(null);continue;}
-    const hh=Math.max(...h.slice(i-kp+1,i+1)),ll=Math.min(...l.slice(i-kp+1,i+1));
-    k.push(hh===ll?50:((c[i]-ll)/(hh-ll))*100);}return{k,d:sma(k.map(v=>v??50),dp)};}
+function stoch(h,l,c,kp=14,dp=3){
+  const HH=_slideMax(h,kp,0),LL=_slideMin(l,kp,0),k=new Array(c.length).fill(null);
+  for(let i=kp-1;i<c.length;i++){const hh=HH[i],ll=LL[i];
+    k[i]=hh===ll?50:((c[i]-ll)/(hh-ll))*100;}
+  return{k,d:sma(k.map(v=>v??50),dp)};}
 function cdlPatterns(op,h,l,c){const p=[];
   for(let i=2;i<c.length;i++){const bd=Math.abs(c[i]-op[i]),rn=h[i]-l[i];
     const lw=Math.min(op[i],c[i])-l[i],uw=h[i]-Math.max(op[i],c[i]);
@@ -838,14 +987,14 @@ function adx(high,low,close,n=14){
 
 // ══ VOLUME PROFILE ══
 function getVolumeProfile(high,low,close,volume,buckets=24){
-  const minP=Math.min(...low),maxP=Math.max(...high);
+  const minP=_arrMin(low),maxP=_arrMax(high);
   const bSize=(maxP-minP)/buckets;
   const vols=new Array(buckets).fill(0);
   close.forEach((c,i)=>{
     const b=Math.min(Math.floor((c-minP)/bSize),buckets-1);
     vols[b]+=(volume[i]||0);
   });
-  const maxV=Math.max(...vols),pocIdx=vols.indexOf(maxV);
+  const maxV=_arrMax(vols),pocIdx=vols.indexOf(maxV);
   return vols.map((v,i)=>({
     y0:minP+i*bSize,y1:minP+(i+1)*bSize,
     vol:v,pct:maxV?v/maxV:0,isPOC:i===pocIdx
@@ -854,8 +1003,8 @@ function getVolumeProfile(high,low,close,volume,buckets=24){
 
 // ══ FIBONACCI 되돌림 + 확장 ══
 function getFibLevels(highs,lows){
-  const maxH=fibHigh!==null?fibHigh:Math.max(...highs);
-  const minL=fibLow!==null?fibLow:Math.min(...lows);
+  const maxH=fibHigh!==null?fibHigh:_arrMax(highs);
+  const minL=fibLow!==null?fibLow:_arrMin(lows);
   const diff=maxH-minL;
   const colOf=l=>l===0||l===1?'#94a3b8':l===0.618||l===0.382?'#f97316':l===0.5?'#eab308':l===0.236||l===0.786?'#a3a3a3':'#94a3b8';
   const levels=[
@@ -888,11 +1037,10 @@ function squeeze(close,high,low,kcMult=1.5,kcN=20){
   const kcU=em.map((v,i)=>v!=null&&at[i]!=null?v+kcMult*at[i]:null);
   const kcL=em.map((v,i)=>v!=null&&at[i]!=null?v-kcMult*at[i]:null);
   const sqz=bb.up.map((bu,i)=>bu!=null&&kcU[i]!=null?bu<=kcU[i]&&bb.lo[i]>=kcL[i]:null);
+  const HH=_slideMax(high,kcN,0),LL=_slideMin(low,kcN,0);
   const mom=close.map((_,i)=>{
     if(i<kcN-1||em[i]==null)return null;
-    const hh=Math.max(...high.slice(i-kcN+1,i+1));
-    const ll=Math.min(...low.slice(i-kcN+1,i+1));
-    return close[i]-((hh+ll)/2+em[i])/2;
+    return close[i]-((HH[i]+LL[i])/2+em[i])/2;
   });
   return{sqz,mom};
 }
@@ -923,9 +1071,9 @@ function findDivergence(close,indicator,range=40){
 // ══ LIQUIDITY SWEEP (유동성 스윕 / 스탑헌팅) ══
 function liquiditySweep(high,low,close,open,lookback=20){
   const sweeps=[];
+  const PH=_slideMax(high,lookback,1),PL=_slideMin(low,lookback,1);
   for(let i=lookback;i<close.length;i++){
-    const ph=Math.max(...high.slice(i-lookback,i));
-    const pl=Math.min(...low.slice(i-lookback,i));
+    const ph=PH[i],pl=PL[i];
     if(low[i]<pl&&close[i]>pl&&close[i]>open[i]){
       const wr=(pl-low[i])/(high[i]-low[i]||1);
       if(wr>0.25)sweeps.push({i,type:'bull',level:pl,wick:wr});
@@ -1162,6 +1310,29 @@ function process(){
 }
 
 // ══ CHARTS ══
+// 지표 토글마다 newPlot으로 6개 차트를 통째로 다시 만들던 것을
+// react로 바꿨다. 데이터/기간/봉주기가 바뀐 경우에만 새로 만든다.
+let _plotInit={},_plotKey='';
+function _plot(id,traces,layout,config){
+  const key=CT+'|'+CG+'|'+CR;
+  if(_plotKey!==key){_plotInit={};_plotKey=key;}
+  if(_plotInit[id]&&document.getElementById(id)&&document.getElementById(id).data){
+    Plotly.react(id,traces,layout,config);
+  }else{
+    Plotly.newPlot(id,traces,layout,config);_plotInit[id]=true;
+  }
+}
+// Plotly가 async라 아직 안 왔을 수 있다. 준비되면 실행한다.
+function _whenPlotly(cb){
+  if(typeof Plotly!=='undefined')return cb();
+  if(window.__plotlyFailed){setOv('<div class="txt">차트 라이브러리를 불러오지 못했습니다. 네트워크를 확인하고 새로고침해 주세요.</div>');return;}
+  let n=0;
+  const t=setInterval(()=>{
+    if(typeof Plotly!=='undefined'){clearInterval(t);cb();}
+    else if(window.__plotlyFailed||++n>300){clearInterval(t);
+      setOv('<div class="txt">차트 라이브러리를 불러오지 못했습니다. 네트워크를 확인하고 새로고침해 주세요.</div>');}
+  },50);
+}
 function nextTradingDay(dateStr,n){
   const d=new Date(dateStr);
   const result=[];
@@ -1224,7 +1395,8 @@ function buildScenarios(rows,inds,fwdBars=20){
   const allDates=[dates[n-1],...futureDates];
   return{allDates,basePrices,bullPrices,bearPrices,pBull,pBase,pBear};
 }
-function drawCharts(){
+function drawCharts(){_whenPlotly(_drawChartsImpl);}
+function _drawChartsImpl(){
   const rows=SD._rows;
   const{close,high,low,open,volume,dates}=rows;
   const{R,B,s20,s50,s200,M,ST_IND,OBV_IND,ADX_IND,AVWAP,SQZ}=SD._i;
@@ -1479,7 +1651,7 @@ function drawCharts(){
     hoverlabel:{bgcolor:'rgba(255,255,255,.97)',bordercolor:'#e2e8f0',font:{family:ff,size:isMob?9:10,color:'#0f172a'},namelength:0},
     shapes:[...fibShapes,...vpShapes],
     annotations:[...fibAnno,...vpAnno,...entryAnno,...predAnno]};
-  Plotly.newPlot('mc',tr,lo2,{responsive:true,displayModeBar:isMob?false:'hover',scrollZoom:true,
+  _plot('mc',tr,lo2,{responsive:true,displayModeBar:isMob?false:'hover',scrollZoom:true,
     modeBarButtonsToRemove:['toImage','sendDataToCloud','select2d','lasso2d','autoScale2d','toggleSpikelines']});
 
   // ── Divergence markers ──
@@ -1495,7 +1667,7 @@ function drawCharts(){
     DIV_M.bear.forEach(d=>{if(M.hist[d.i]!=null){mBearX.push(dates[d.i]);mBearY.push(M.hist[d.i]);}});
   }
 
-  Plotly.newPlot('rc',[
+  _plot('rc',[
     {type:'scatter',mode:'lines',x:dates,y:R,line:{color:'#2563eb',width:1.5},hovertemplate:'RSI: %{y:.1f}<extra></extra>'},
     {type:'scatter',mode:'lines',x:dates,y:Array(dates.length).fill(70),line:{color:'rgba(220,38,38,.35)',width:1,dash:'dot'},showlegend:false,hoverinfo:'skip'},
     {type:'scatter',mode:'lines',x:dates,y:Array(dates.length).fill(30),line:{color:'rgba(5,150,105,.35)',width:1,dash:'dot'},fill:'tonexty',fillcolor:'rgba(5,150,105,.04)',showlegend:false,hoverinfo:'skip'},
@@ -1510,7 +1682,7 @@ function drawCharts(){
   {responsive:true,displayModeBar:false});
 
   const hc=M.hist.map(v=>v==null?'rgba(0,0,0,0)':v>=0?'rgba(5,150,105,.55)':'rgba(220,38,38,.55)');
-  Plotly.newPlot('dc',[
+  _plot('dc',[
     {type:'bar',x:dates,y:M.hist,marker:{color:hc},hovertemplate:'Hist: %{y:.3f}<extra></extra>'},
     {type:'scatter',mode:'lines',x:dates,y:M.ml,line:{color:'#2563eb',width:1.5},hovertemplate:'MACD: %{y:.3f}<extra></extra>'},
     {type:'scatter',mode:'lines',x:dates,y:M.sl,line:{color:'#d97706',width:1.5},hovertemplate:'Sig: %{y:.3f}<extra></extra>'},
@@ -1541,7 +1713,7 @@ function drawCharts(){
       name:'OBV',yaxis:'y2',hovertemplate:'OBV: %{y:,.0f}<extra></extra>',showlegend:false});
     volLayout.yaxis2={overlaying:'y',side:'left',showticklabels:false,showgrid:false,zeroline:false};
   }
-  Plotly.newPlot('vc',volTraces,volLayout,{responsive:true,displayModeBar:false});
+  _plot('vc',volTraces,volLayout,{responsive:true,displayModeBar:false});
 
   // ── ADX sub-chart ──
   const axEl=document.getElementById('ax');
@@ -1551,7 +1723,7 @@ function drawCharts(){
     const adxShapes=[{type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:25,y1:25,
       line:{color:'rgba(253,224,71,.5)',width:1,dash:'dot'}}];
     const strongZoneX=[...dates,...dates.slice().reverse()];
-    Plotly.newPlot('ax',[
+    _plot('ax',[
       {type:'scatter',mode:'lines',x:dates,y:adxLine,
         line:{color:'#db2777',width:1.5},
         hovertemplate:'ADX: %{y:.1f}<extra></extra>',name:'ADX'},
@@ -1591,7 +1763,7 @@ function drawCharts(){
       const m=sqzMom[i]||0;
       return m>=0?'rgba(200,200,0,0.9)':'rgba(150,0,150,0.9)';
     });
-    Plotly.newPlot('sqz',[
+    _plot('sqz',[
       {type:'bar',x:dates,y:sqzMom,marker:{color:sqzBarColors},
        hovertemplate:'SQZ Mom: %{y:.4f}<extra></extra>',showlegend:false},
       {type:'scatter',mode:'markers',x:dates,y:sqzDotY,
@@ -1769,7 +1941,17 @@ function drawPanel(){
       <button onclick="openGemini()" style="width:100%;padding:9px;border-radius:6px;border:none;background:linear-gradient(135deg,#4285f4,#0f9d58);color:#fff;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.3px">✦ Gemini AI 종합 평가</button>
     </div>
   `;}
-window.addEventListener('resize',()=>{if(SD){const ids=['mc','rc','dc','vc','sqz'];if(sADX)ids.push('ax');ids.forEach(id=>Plotly.Plots.resize(id));}});
+let _rsTimer=null;
+window.addEventListener('resize',()=>{
+  if(!SD||typeof Plotly==='undefined')return;
+  // 모바일은 주소창이 접히고 펴질 때마다 resize가 쏟아진다 — 디바운스
+  clearTimeout(_rsTimer);
+  _rsTimer=setTimeout(()=>{
+    const ids=['mc','rc','dc','vc','sqz'];if(sADX)ids.push('ax');
+    ids.forEach(id=>{const el=document.getElementById(id);
+      if(el&&el.data)try{Plotly.Plots.resize(id);}catch{}});
+  },150);
+});
 
 // ══ SCREENER ══
 const SCR_UNIVERSE={
@@ -2011,23 +2193,31 @@ async function runScan(force=false){
   document.getElementById('scr-results').innerHTML='';
   document.getElementById('scr-cache-banner').style.display='none';
 
-  for(let i=0;i<tickers.length;i+=4){
-    const batch=tickers.slice(i,i+4);
-    await Promise.all(batch.map(async t=>{
+  // 연속 워커 풀 — 기존엔 4개씩 묶어 받고 200ms 쉬었다. 묶음 안의 느린
+  // 한 종목이 나머지 3개를 잡아두고, 180종목이면 대기만 9초였다.
+  // 이제는 워커가 끝나는 즉시 다음 종목을 집어간다(멈춤 없음).
+  const CONC=Math.min(8,tickers.length);
+  let cursor=0,failStreak=0;
+  const worker=async()=>{
+    while(cursor<tickers.length){
+      const t=tickers[cursor++];
       try{
         const res=await fetchForScreener(t);
         if(res){
           const sc=scoreStock(res.rows);
           results.push({ticker:t,name:res.name,currency:res.currency,price:res.currentPrice,bt:res.bt,...sc});
-        }
-      }catch{}
+          failStreak=0;
+        }else failStreak++;
+      }catch{failStreak++;}
+      // 연속 실패가 쌓이면 레이트리밋으로 보고 잠깐 물러선다
+      if(failStreak>=6){await new Promise(r=>setTimeout(r,600));failStreak=0;}
       done++;
       const pct=Math.round(done/tickers.length*100);
       document.getElementById('scr-prog-txt').textContent=`${done}/${tickers.length} 분석 중... (${t})`;
       document.getElementById('scr-prog-bar').style.width=pct+'%';
-    }));
-    if(i+4<tickers.length)await new Promise(r=>setTimeout(r,200));
-  }
+    }
+  };
+  await Promise.all(Array.from({length:CONC},worker));
 
   const sorted=applyScrSort(results);
   // 캐시 저장
