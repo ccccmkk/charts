@@ -15,3 +15,7 @@ quantstats>=0.0.62        # tearsheet HTML
 
 # 개발
 pytest>=7.0
+
+# 머신러닝 예측 (quant.ml). lightgbm이 없으면 sklearn으로 자동 대체된다
+scikit-learn>=1.3
+lightgbm>=4.0

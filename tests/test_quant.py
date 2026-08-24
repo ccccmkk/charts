@@ -279,3 +279,115 @@ def test_all_wins_does_not_report_negative_expectancy():
     assert t["payoff"] != t["payoff"], "손익비는 nan이어야 한다"
     assert t["kelly"] != t["kelly"], "켈리는 nan이어야 한다"
     assert "추정 불가" in M.summary_table(M.perf_stats(pd.Series([100.0, 110.0])), t)
+
+
+# ── ml: 누출 방지가 이 모듈의 전부다 ───────────────────────────
+
+def _synth_ohlcv(ret: np.ndarray, seed: int = 0) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    n = len(ret)
+    idx = pd.bdate_range("2018-01-02", periods=n)
+    c = 100 * np.exp(np.cumsum(ret))
+    hi = c * (1 + np.abs(rng.normal(0, .006, n)))
+    lo = c * (1 - np.abs(rng.normal(0, .006, n)))
+    op = np.r_[c[0], c[:-1]] * (1 + rng.normal(0, .002, n))
+    hi = np.maximum.reduce([hi, op, c])
+    lo = np.minimum.reduce([lo, op, c])
+    return pd.DataFrame({"open": op, "high": hi, "low": lo, "close": c,
+                         "volume": rng.lognormal(13, .4, n)}, index=idx)
+
+
+def test_target_uses_next_open_not_close():
+    """라벨은 '다음 봉 시가 → horizon봉 뒤 시가' 수익률이어야 한다.
+
+    종가 기준으로 만들면 종가를 보고 종가에 산다는 뜻이라 미래참조다.
+    """
+    from quant import ml
+
+    n = 30
+    idx = pd.bdate_range("2024-01-01", periods=n)
+    df = pd.DataFrame({"open": np.arange(100, 100 + n, dtype=float),
+                       "high": 0., "low": 0., "close": 0., "volume": 1.}, index=idx)
+    y = ml.make_target(df, horizon=3, threshold=0.0)
+    # open이 단조 증가 → 전부 상승(1). 끝 4개는 미래가 없어 NaN.
+    assert y.iloc[:20].eq(1.0).all()
+    assert y.iloc[-4:].isna().all(), "미래가 없는 구간은 NaN이어야 한다"
+
+
+def test_features_are_causal():
+    """미래 봉을 잘라내도 과거 피처값이 바뀌면 안 된다."""
+    from quant import ml
+
+    df = _synth_ohlcv(np.random.default_rng(3).normal(0.0002, 0.015, 500), seed=3)
+    full = ml.make_features(df)
+    trimmed = ml.make_features(df.iloc[:-60])
+    common = full.index[:-60].intersection(trimmed.index)
+    a, b = full.loc[common], trimmed.loc[common]
+    for col in a.columns:
+        m = a[col].notna() & b[col].notna()
+        assert np.allclose(a.loc[m, col], b.loc[m, col]), f"{col} 미래참조"
+
+
+def test_features_are_scale_free():
+    """가격 단위를 10배로 키워도 피처는 그대로여야 한다.
+
+    비율이 아니라 원값이 섞여 있으면 트리가 가격대를 외운다.
+    """
+    from quant import ml
+
+    df = _synth_ohlcv(np.random.default_rng(4).normal(0.0002, 0.015, 400), seed=4)
+    scaled = df.copy()
+    for c in ("open", "high", "low", "close"):
+        scaled[c] = scaled[c] * 10
+    a, b = ml.make_features(df), ml.make_features(scaled)
+    for col in a.columns:
+        if col in ("dow", "month"):
+            continue
+        m = a[col].notna() & b[col].notna()
+        assert np.allclose(a.loc[m, col], b.loc[m, col], rtol=1e-6, atol=1e-9), \
+            f"{col}이 가격 스케일에 의존한다"
+
+
+@pytest.mark.slow
+def test_no_leakage_on_random_walk():
+    """랜덤워크는 예측 불가능하다. OOS AUC가 0.5에서 멀어지면 누출이다.
+
+    이 테스트가 이 모듈의 존재 이유다. 무작위 분할을 쓰거나 purging을
+    빼먹으면 여기서 AUC가 0.6~0.7로 튄다.
+    """
+    from quant import ml
+
+    df = _synth_ohlcv(np.random.default_rng(1).normal(0.0002, 0.015, 900), seed=1)
+    ev = ml.evaluate(df, ml.MLConfig(horizon=5, n_splits=3, min_train=250))
+    assert 0.42 <= ev["auc"] <= 0.58, f"랜덤워크에서 AUC {ev['auc']:.3f} — 누출 의심"
+
+
+@pytest.mark.slow
+def test_detects_planted_signal():
+    """심어놓은 규칙은 찾아내야 한다. 못 찾으면 파이프라인이 죽은 것이다."""
+    from quant import ml
+
+    rng = np.random.default_rng(2)
+    n = 1100
+    base = rng.normal(0.0002, 0.014, n)
+    px0 = 100 * np.exp(np.cumsum(base))          # 트리거 판정은 기준 경로에서만
+    ret = base.copy()
+    for i in range(25, n - 7):
+        if px0[i] / px0[i - 5] - 1 < -0.025:
+            ret[i + 1:i + 6] += 0.006
+    ev = ml.evaluate(_synth_ohlcv(ret, seed=2), ml.MLConfig(horizon=5, n_splits=3, min_train=250))
+    assert ev["auc"] > 0.56, f"심어놓은 신호를 못 찾았다 (AUC {ev['auc']:.3f})"
+
+
+def test_leak_detector_catches_a_planted_leak():
+    """정답을 피처에 흘리면 AUC가 1에 가까워야 한다 — 검출 능력 자체 점검."""
+    from quant import ml
+
+    df = _synth_ohlcv(np.random.default_rng(1).normal(0.0002, 0.015, 700), seed=1)
+    orig = ml.make_features
+    try:
+        ml.make_features = lambda d: orig(d).assign(CHEAT=ml.make_target(d, 5, 0.0))
+        ev = ml.evaluate(df, ml.MLConfig(horizon=5, n_splits=3, min_train=250))
+    finally:
+        ml.make_features = orig
+    assert ev["auc"] > 0.9, f"명백한 누출을 못 잡았다 (AUC {ev['auc']:.3f})"

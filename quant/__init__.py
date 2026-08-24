@@ -15,6 +15,7 @@ CLI
 ---
     python -m quant backtest AAPL
     python -m quant optimize 005930 --walk-forward
+    python -m quant ml AAPL --importance
     python -m quant scan --universe kr
     python -m quant portfolio AAPL MSFT NVDA --method hrp
 """
@@ -22,9 +23,9 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
-from . import backtest, config, data, indicators, metrics, optimize, portfolio, screener, signals  # noqa: E402,F401
+from . import backtest, config, data, indicators, metrics, ml, optimize, portfolio, screener, signals  # noqa: E402,F401
 
 __all__ = [
-    "backtest", "config", "data", "indicators", "metrics",
+    "backtest", "config", "data", "indicators", "metrics", "ml",
     "optimize", "portfolio", "screener", "signals", "__version__",
 ]

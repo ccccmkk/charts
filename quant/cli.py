@@ -140,6 +140,54 @@ def cmd_portfolio(args) -> int:
     return 0
 
 
+def cmd_ml(args) -> int:
+    from . import ml as ML
+
+    df = _load(args)
+    costs, tax = _costs_for(args.ticker, args.costs)
+    bcfg = BacktestConfig(initial_capital=args.capital, costs=costs, interval=args.interval,
+                          stop_loss=args.stop, take_profit=args.target)
+    cfg = ML.MLConfig(horizon=args.horizon, n_splits=args.splits,
+                      prob_cut=args.prob_cut, threshold=args.label_threshold)
+
+    print(f"\n■ {args.ticker} — {args.horizon}봉 뒤 상승 확률 (purged walk-forward {args.splits}구간)")
+    try:
+        r = ML.compare(df, cfg, bcfg, apply_tax=tax)
+    except ValueError as e:
+        print(f"  {e}"); return 1
+    ev = r["eval"]
+
+    print(f"\n  OOS 표본 {ev['n_oos']}봉 · {ev['folds']}구간")
+    print(f"  AUC      {ev['auc']:.3f}   ← 0.5면 동전던지기, 0.55 넘어야 의미가 생긴다")
+    print(f"  정확도   {ev['accuracy']:.1f}%")
+    print(f"  기준선   {max(ev['base_rate'], 100-ev['base_rate']):.1f}%   (항상 한쪽으로만 찍었을 때)")
+    print(f"  엣지     {ev['edge']:+.1f}%p")
+
+    if ev["auc"] < 0.53:
+        print("\n  ❌ 예측력이 사실상 없다. 이 종목·이 기간에서는 쓰지 마라.")
+    elif ev["auc"] < 0.57:
+        print("\n  △ 미약하다. 거래비용을 빼면 남지 않을 수 있다.")
+    else:
+        print("\n  ✅ 기준선을 넘는다. 단, 아래 백테스트까지 확인할 것.")
+
+    print("\n■ 확률 구간별 실제 상승률 (아래로 갈수록 높아져야 한다)")
+    print(ev["calibration"].to_string())
+
+    print("\n■ 같은 구간 백테스트 (수수료·슬리피지 반영)")
+    print(f"  {'전략':<20} {'수익률':>9} {'샤프':>7} {'MDD':>8} {'거래':>7}")
+    for name, res in [(f"ML (확률>{cfg.prob_cut})", r["ml"]), ("규칙 기반 시그널", r["rule"])]:
+        p, t = res.performance, res.stats
+        print(f"  {name:<20} {p.total_return:>8.2f}% {p.sharpe:>7.2f} {p.max_drawdown:>7.1f}% {t['n_trades']:>6}회")
+    print(f"  {'단순보유':<20} {r['buy_hold']:>8.2f}% {'-':>7} {'-':>8} {'-':>7}")
+
+    if args.importance:
+        print("\n■ 피처 중요도 상위 15 (해석용 · in-sample이라 성능 근거는 아니다)")
+        print(ML.feature_importance(df, cfg, 15).to_string())
+
+    print("\n  ※ 한 종목의 한 기간 결과다. 여러 종목에서 재현되지 않으면 우연이다.")
+    return 0
+
+
 # ── 파서 ──────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -195,6 +243,15 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--fast", action="store_true", help="백테스트 생략(점수만)")
     sc.add_argument("--out", default=None, help="CSV 저장 경로")
     sc.set_defaults(func=cmd_scan)
+
+    mlp = sub.add_parser("ml", help="머신러닝 상승확률 예측 (그래디언트 부스팅)")
+    common(mlp)
+    mlp.add_argument("--horizon", type=int, default=5, help="며칠 뒤를 예측할지")
+    mlp.add_argument("--splits", type=int, default=5, help="워크포워드 구간 수")
+    mlp.add_argument("--prob-cut", type=float, default=0.55, help="매수 판정 확률")
+    mlp.add_argument("--label-threshold", type=float, default=0.0, help="상승 라벨 기준 수익률(%%)")
+    mlp.add_argument("--importance", action="store_true", help="피처 중요도 출력")
+    mlp.set_defaults(func=cmd_ml)
 
     pf = sub.add_parser("portfolio", help="포트폴리오 최적화")
     pf.add_argument("tickers", nargs="+")
