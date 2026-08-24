@@ -1,0 +1,17 @@
+# 필수 — 이것만 있으면 지표/백테스트/성과지표/포트폴리오가 전부 돌아간다
+numpy>=1.24
+pandas>=2.0
+
+# 최적화 (min_var / max_sharpe / hrp). 없으면 역변동성으로 자동 대체된다
+scipy>=1.10
+
+# 데이터 소스 — 필요한 것만 설치해도 된다
+yfinance>=0.2.40          # 해외 주식·ETF
+finance-datareader>=0.9.9 # 국내외 통합, 국내 정확도 우수
+pykrx>=1.2.8              # KRX 원본 (공매도·수급). KRX_ID / KRX_PW 환경변수 필요
+
+# 선택 — 리포트
+quantstats>=0.0.62        # tearsheet HTML
+
+# 개발
+pytest>=7.0

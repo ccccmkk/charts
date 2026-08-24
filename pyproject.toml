@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "charts-quant"
+version = "0.1.0"
+description = "charts 웹 차트 앱의 퀀트 엔진 — 백테스트 / 최적화 / 스크리닝 / 포트폴리오"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "pandas>=2.0"]
+
+[project.optional-dependencies]
+full = ["scipy>=1.10", "yfinance>=0.2.40", "finance-datareader>=0.9.9",
+        "pykrx>=1.2.8", "quantstats>=0.0.62"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+quant = "quant.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["quant*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
