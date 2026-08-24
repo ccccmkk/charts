@@ -161,6 +161,16 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
 .qtog:hover{background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.4)}
 .qmc{display:flex;align-items:center;gap:2px;margin:4px 0 8px}
 .qmc-seg{height:7px;flex:1;border-radius:2px}
+@media(max-width:480px){
+  .qm-grid{grid-template-columns:repeat(3,1fr);gap:4px}
+  .qm{padding:5px 6px}
+  .qm .k{font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qm .v{font-size:12px}
+  .qsec{margin:8px 0 4px;font-size:8.5px;letter-spacing:.5px}
+  .qbar{gap:6px 12px;font-size:10.5px;padding:7px}
+  .qtog{width:100%;text-align:center}
+  #bta-info{word-break:keep-all}
+}
 </style>
 </head>
 <body>
@@ -2316,8 +2326,11 @@ function perfStats(bt,rows){
   // 켈리 기준 f* = W - (1-W)/R  (Riskfolio·vectorbt의 Kelly sizing)
   const kelly=payoff>0?(wr-(1-wr)/payoff)*100:0;
 
+  // 손실 거래가 0건이면 손익비도 켈리도 정의되지 않는다 (0으로 두면 '기대값 음수'로 오독됨)
+  const noLoss=tr.length>0&&L.length===0;
+
   return{ann,bars,years,cagr,vol:vol*100,sharpe,sortino,calmar,ddDur,expo,
-    bh,alpha,pf,payoff,expectancy,best,worst,avgBars,mcw,mcl,kelly,
+    bh,alpha,pf,payoff,expectancy,best,worst,avgBars,mcw,mcl,kelly,noLoss,
     avgWin,avgLoss,nTrades:tr.length};
 }
 
@@ -2377,10 +2390,10 @@ function renderQuantReport(bt,rows){
 
   h+='<div class="qsec">거래 통계</div><div class="qm-grid">';
   h+=_qtile('Profit Factor',q.pf>=99?'∞':q.pf.toFixed(2),'',_qgrade(q.pf,1.5,1));
-  h+=_qtile('손익비 R',q.payoff.toFixed(2),'',_qgrade(q.payoff,1.5,1));
+  h+=q.noLoss?_qtile('손익비 R','—','손실없음'):_qtile('손익비 R',q.payoff.toFixed(2),'',_qgrade(q.payoff,1.5,1));
   h+=_qtile('기대값/회',pf(q.expectancy,2)+'%','',sg(q.expectancy));
   h+=_qtile('평균 수익',pf(q.avgWin,1)+'%','','var(--gn)');
-  h+=_qtile('평균 손실','-'+q.avgLoss.toFixed(1)+'%','','var(--rd)');
+  h+=q.noLoss?_qtile('평균 손실','—','손실없음'):_qtile('평균 손실','-'+q.avgLoss.toFixed(1)+'%','','var(--rd)');
   h+=_qtile('최고/최악',pf(q.best,0)+'/'+q.worst.toFixed(0)+'%');
   h+=_qtile('최다 연승/연패',q.mcw+' / '+q.mcl);
   h+=_qtile('평균 보유',q.avgBars.toFixed(0)+unit);
@@ -2395,12 +2408,20 @@ function renderQuantReport(bt,rows){
   </div>`;
 
   h+='<div class="qsec">켈리 기준 베팅비중</div>';
-  const kc=q.kelly>0?'var(--gn)':'var(--rd)';
-  h+=`<div class="qbar">
-    <span>Full Kelly: <b style="color:${kc}">${q.kelly.toFixed(1)}%</b></span>
-    <span>Half Kelly: <b style="color:${kc}">${(q.kelly/2).toFixed(1)}%</b></span>
-    <span style="color:var(--t3)">${q.kelly<=0?'기대값이 음수 — 베팅하지 않는 것이 최적':'실무는 변동성 완화를 위해 Half Kelly 이하를 권장'}</span>
-  </div>`;
+  if(q.noLoss){
+    h+=`<div class="qbar"><span style="color:var(--t3)">
+      표본 ${q.nTrades}건이 모두 이익이라 손익비가 정의되지 않아 켈리 비중을 계산할 수 없습니다.
+      거래가 더 쌓이면 표시됩니다.</span></div>`;
+  }else if(q.nTrades===0){
+    h+=`<div class="qbar"><span style="color:var(--t3)">청산된 거래가 없어 계산할 수 없습니다.</span></div>`;
+  }else{
+    const kc=q.kelly>0?'var(--gn)':'var(--rd)';
+    h+=`<div class="qbar">
+      <span>Full Kelly: <b style="color:${kc}">${q.kelly.toFixed(1)}%</b></span>
+      <span>Half Kelly: <b style="color:${kc}">${(q.kelly/2).toFixed(1)}%</b></span>
+      <span style="color:var(--t3)">${q.kelly<=0?'기대값 대비 손익비가 낮아 베팅하지 않는 것이 최적':'실무는 변동성 완화를 위해 Half Kelly 이하를 권장'}</span>
+    </div>`;
+  }
 
   if(mc){
     const seg=(c,f)=>`<div class="qmc-seg" style="background:${c};flex:${f}"></div>`;

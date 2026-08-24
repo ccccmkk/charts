@@ -206,7 +206,7 @@ def trade_stats(trades: pd.DataFrame) -> dict:
         return {"n_trades": 0, "win_rate": 0.0, "profit_factor": 0.0, "payoff": 0.0,
                 "expectancy": 0.0, "avg_win": 0.0, "avg_loss": 0.0, "best": 0.0,
                 "worst": 0.0, "avg_bars": 0.0, "max_win_streak": 0,
-                "max_loss_streak": 0, "kelly": 0.0}
+                "max_loss_streak": 0, "kelly": 0.0, "no_loss": False}
 
     t = trades.copy()
     pnl = t["pnl_pct"].astype(float)
@@ -215,7 +215,10 @@ def trade_stats(trades: pd.DataFrame) -> dict:
 
     avg_win = float(wins.mean()) if len(wins) else 0.0
     avg_loss = float(-losses.mean()) if len(losses) else 0.0
-    payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
+    # 손실 거래가 0건이면 손익비·켈리는 정의되지 않는다. 0으로 두면
+    # "기대값이 음수"로 오독되므로 nan으로 표시해 구분한다.
+    no_loss = len(losses) == 0
+    payoff = float("nan") if no_loss else (avg_win / avg_loss if avg_loss > 0 else 0.0)
     wr = len(wins) / len(t)
 
     streak = (pnl > 0).astype(int)
@@ -239,7 +242,8 @@ def trade_stats(trades: pd.DataFrame) -> dict:
         "avg_bars": float(t["bars"].mean()) if "bars" in t else 0.0,
         "max_win_streak": max_w,
         "max_loss_streak": max_l,
-        "kelly": kelly_fraction(wr, payoff) * 100,
+        "kelly": float("nan") if no_loss else kelly_fraction(wr, payoff) * 100,
+        "no_loss": no_loss,
     }
 
 
@@ -307,10 +311,15 @@ def summary_table(perf: Performance, tstats: dict, mc: dict | None = None) -> st
     t = tstats
     pf = t["profit_factor"]
     pf_s = "∞" if pf == float("inf") else f"{pf:.2f}"
-    add(f"│ 거래 {t['n_trades']:>5d}회   승률 {t['win_rate']:>6.1f}%   PF {pf_s:>6}   손익비 {t['payoff']:>5.2f}")
+    nan = lambda v: v != v
+    payoff_s = "—" if nan(t["payoff"]) else f"{t['payoff']:.2f}"
+    add(f"│ 거래 {t['n_trades']:>5d}회   승률 {t['win_rate']:>6.1f}%   PF {pf_s:>6}   손익비 {payoff_s:>5}")
     add(f"│ 기대값{t['expectancy']:>7.2f}%   평균수익 {t['avg_win']:>6.2f}%   평균손실 {-t['avg_loss']:>7.2f}%")
     add(f"│ 최고 {t['best']:>7.2f}%   최악 {t['worst']:>9.2f}%   연승/연패 {t['max_win_streak']}/{t['max_loss_streak']}")
-    add(f"│ 켈리 {t['kelly']:>7.1f}%   (Half Kelly {t['kelly']/2:>5.1f}%)   평균보유 {t['avg_bars']:>4.1f}봉")
+    if nan(t["kelly"]):
+        add(f"│ 켈리      —     (손실 거래가 없어 추정 불가)   평균보유 {t['avg_bars']:>4.1f}봉")
+    else:
+        add(f"│ 켈리 {t['kelly']:>7.1f}%   (Half Kelly {t['kelly']/2:>5.1f}%)   평균보유 {t['avg_bars']:>4.1f}봉")
     if mc:
         add("├─ 몬테카를로 " + "─" * 49)
         add(f"│ {mc['runs']}회 재추출 → 비관5% {mc['p5']:>7.1f}%  중앙 {mc['p50']:>7.1f}%  낙관95% {mc['p95']:>7.1f}%")

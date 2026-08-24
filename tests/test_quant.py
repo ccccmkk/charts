@@ -265,3 +265,17 @@ def test_rebalance_equity_is_positive(prices):
     eq = PF.backtest_weights(prices, w)
     assert len(eq) == len(prices)
     assert (eq > 0).all()
+
+
+def test_all_wins_does_not_report_negative_expectancy():
+    """손실 거래가 0건이면 손익비·켈리는 '정의 불가'여야 한다.
+
+    0으로 채우면 UI가 '기대값이 음수'라고 잘못 표시한다(실제로 그랬다).
+    """
+    tr = pd.DataFrame({"pnl_pct": [5.0, 8.0, 11.0], "pnl": [5, 8, 11], "bars": [3, 4, 5]})
+    t = M.trade_stats(tr)
+    assert t["no_loss"] is True
+    assert t["expectancy"] > 0
+    assert t["payoff"] != t["payoff"], "손익비는 nan이어야 한다"
+    assert t["kelly"] != t["kelly"], "켈리는 nan이어야 한다"
+    assert "추정 불가" in M.summary_table(M.perf_stats(pd.Series([100.0, 110.0])), t)
