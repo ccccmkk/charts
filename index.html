@@ -149,6 +149,18 @@ header{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(-
 @media(max-width:480px){
   .ibs{display:none}
 }
+.qm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:5px;margin-bottom:8px}
+.qm{background:var(--s2);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-family:'JetBrains Mono',monospace}
+.qm .k{font-size:9px;color:var(--t3);display:block;margin-bottom:2px}
+.qm .v{font-size:13px;font-weight:700;color:var(--t)}
+.qm .s{font-size:9px;color:var(--t3);margin-left:2px;font-weight:500}
+.qsec{font-size:9px;color:var(--t3);font-family:'JetBrains Mono',monospace;letter-spacing:1px;margin:10px 0 5px;text-transform:uppercase;font-weight:700}
+.qbar{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;font-family:'JetBrains Mono',monospace;padding:8px;background:var(--s2);border-radius:6px;border:1px solid var(--br);margin-bottom:8px}
+.qwarn{font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--or);background:rgba(217,119,6,.08);border:1px solid rgba(217,119,6,.3);border-radius:6px;padding:6px 9px;margin-bottom:8px}
+.qtog{background:var(--s2);border:1px solid var(--br);border-radius:6px;padding:5px 11px;cursor:pointer;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--pu);margin-bottom:8px}
+.qtog:hover{background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.4)}
+.qmc{display:flex;align-items:center;gap:2px;margin:4px 0 8px}
+.qmc-seg{height:7px;flex:1;border-radius:2px}
 </style>
 </head>
 <body>
@@ -2193,7 +2205,7 @@ function signalBacktest(rows,signals){
   const{close,dates}=rows,n=close.length;
   const INIT=10000;
   let cash=INIT,pos=null;
-  const trades=[],equity=[INIT];
+  const trades=[],equity=[INIT],inMkt=[];
   const sigByIdx={};
   signals.forEach(s=>{if(!sigByIdx[s.i])sigByIdx[s.i]=[];sigByIdx[s.i].push(s);});
   for(let i=0;i<n;i++){
@@ -2220,6 +2232,7 @@ function signalBacktest(rows,signals){
       }
     }
     equity.push(pos?pos.shares*close[i]:cash);
+    inMkt.push(pos?1:0);
   }
   // 미결 포지션
   if(pos){
@@ -2234,10 +2247,186 @@ function signalBacktest(rows,signals){
   const wins=trades.filter(t=>t.pnl>0),losses=trades.filter(t=>t.pnl<=0);
   let peak=INIT,maxDD=0;
   equity.forEach(v=>{if(v>peak)peak=v;const dd=(peak-v)/peak*100;if(dd>maxDD)maxDD=dd;});
-  return{trades,equity,INIT,finalEquity:cash,
+  return{trades,equity,inMkt,INIT,finalEquity:cash,
     totalPnl:(cash/INIT-1)*100,
     winRate:trades.length?wins.length/trades.length*100:0,
     wins:wins.length,losses:losses.length,maxDD};
+}
+
+// ══ 퀀트 성과지표 (QuantStats / Riskfolio / vectorbt 방식 이식) ══
+const ANN={D:252,W:52,M:12};
+
+function _mean(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0;}
+function _std(a){if(a.length<2)return 0;const m=_mean(a);
+  return Math.sqrt(a.reduce((x,y)=>x+(y-m)*(y-m),0)/(a.length-1));}
+function _quantile(sorted,p){if(!sorted.length)return 0;
+  return sorted[Math.min(sorted.length-1,Math.max(0,Math.floor(sorted.length*p)))];}
+
+// 재현 가능한 난수 (mulberry32) — 같은 데이터면 항상 같은 리포트가 나오도록
+function _rng(seed){let a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;
+  return((t^t>>>14)>>>0)/4294967296;};}
+
+// 봉당 수익률 → 연율화 위험조정지표
+function perfStats(bt,rows){
+  const ann=ANN[CG]||252;
+  const eq=bt.equity,n=eq.length;
+  const rets=[];
+  for(let i=1;i<n;i++)if(eq[i-1]>0)rets.push(eq[i]/eq[i-1]-1);
+  const mu=_mean(rets);
+  const vol=_std(rets)*Math.sqrt(ann);
+  const dVol=_std(rets.filter(r=>r<0))*Math.sqrt(ann);
+  const bars=Math.max(1,n-1), years=bars/ann;
+  const growth=bt.finalEquity/bt.INIT;
+  const cagr=(years>0&&growth>0)?(Math.pow(growth,1/years)-1)*100:0;
+  const sharpe=vol>0?(mu*ann)/vol:0;                 // 무위험수익률 0 가정
+  const sortino=dVol>0?(mu*ann)/dVol:0;              // 하방편차만 사용
+  const calmar=bt.maxDD>0?cagr/bt.maxDD:0;
+
+  // 최대낙폭 지속기간(고점 회복까지 걸린 봉 수)
+  let peak=eq[0],peakIdx=0,ddDur=0;
+  for(let i=0;i<n;i++){
+    if(eq[i]>=peak){peak=eq[i];peakIdx=i;}
+    else if(i-peakIdx>ddDur)ddDur=i-peakIdx;
+  }
+  const expo=bt.inMkt&&bt.inMkt.length?_mean(bt.inMkt)*100:0;
+
+  // Buy & Hold 대비 알파
+  const c=rows.close;
+  const bh=c.length>1?(c[c.length-1]/c[0]-1)*100:0;
+  const alpha=bt.totalPnl-bh;
+
+  // 거래 단위 통계
+  const tr=bt.trades;
+  const W=tr.filter(t=>t.pnl>0),L=tr.filter(t=>t.pnl<=0);
+  const avgWin=_mean(W.map(t=>t.pnlPct));
+  const avgLoss=Math.abs(_mean(L.map(t=>t.pnlPct)));
+  const gp=W.reduce((a,t)=>a+t.pnl,0),gl=Math.abs(L.reduce((a,t)=>a+t.pnl,0));
+  const pf=gl>0?gp/gl:(gp>0?99:0);
+  const payoff=avgLoss>0?avgWin/avgLoss:0;           // 손익비 R
+  const wr=tr.length?W.length/tr.length:0;
+  const expectancy=_mean(tr.map(t=>t.pnlPct));       // 1회 거래 기대값 %
+  const best=tr.length?Math.max(...tr.map(t=>t.pnlPct)):0;
+  const worst=tr.length?Math.min(...tr.map(t=>t.pnlPct)):0;
+  const avgBars=_mean(tr.map(t=>t.bars));
+  let cw=0,cl=0,mcw=0,mcl=0;
+  tr.forEach(t=>{if(t.pnl>0){cw++;cl=0;if(cw>mcw)mcw=cw;}
+                 else{cl++;cw=0;if(cl>mcl)mcl=cl;}});
+
+  // 켈리 기준 f* = W - (1-W)/R  (Riskfolio·vectorbt의 Kelly sizing)
+  const kelly=payoff>0?(wr-(1-wr)/payoff)*100:0;
+
+  return{ann,bars,years,cagr,vol:vol*100,sharpe,sortino,calmar,ddDur,expo,
+    bh,alpha,pf,payoff,expectancy,best,worst,avgBars,mcw,mcl,kelly,
+    avgWin,avgLoss,nTrades:tr.length};
+}
+
+// 몬테카를로: 거래 순서를 부트스트랩 재추출해 결과 분포를 추정
+// (순서 운(luck)을 제거하고 전략의 실제 기대범위를 본다)
+function monteCarlo(trades,runs=2000){
+  const pnl=trades.map(t=>t.pnlPct/100);
+  if(pnl.length<5)return null;
+  const rnd=_rng(pnl.length*7919+Math.round(Math.abs(pnl[0])*1e6));
+  const finals=[],dds=[];
+  for(let r=0;r<runs;r++){
+    let e=1,pk=1,mdd=0;
+    for(let i=0;i<pnl.length;i++){
+      e*=1+pnl[Math.floor(rnd()*pnl.length)];
+      if(e<=0){e=1e-9;break;}
+      if(e>pk)pk=e;
+      const d=(pk-e)/pk; if(d>mdd)mdd=d;
+    }
+    finals.push((e-1)*100); dds.push(mdd*100);
+  }
+  finals.sort((a,b)=>a-b); dds.sort((a,b)=>a-b);
+  return{p5:_quantile(finals,.05),p25:_quantile(finals,.25),
+    p50:_quantile(finals,.5),p75:_quantile(finals,.75),p95:_quantile(finals,.95),
+    medDD:_quantile(dds,.5),worstDD:_quantile(dds,.95),
+    probLoss:finals.filter(v=>v<0).length/finals.length*100,runs};
+}
+
+// ── 리포트 렌더링 ──
+function _qtile(k,v,sub,color){
+  return `<div class="qm"><span class="k">${k}</span><span class="v"${color?` style="color:${color}"`:''}>${v}</span>${sub?`<span class="s">${sub}</span>`:''}</div>`;
+}
+function _qgrade(v,good,bad){
+  if(v>=good)return'var(--gn)';
+  if(v<=bad)return'var(--rd)';
+  return'var(--t)';
+}
+function renderQuantReport(bt,rows){
+  const q=perfStats(bt,rows),mc=monteCarlo(bt.trades);
+  const sg=v=>v>=0?'var(--gn)':'var(--rd)';
+  const pf=(v,d=2)=>(v>=0?'+':'')+v.toFixed(d);
+  const unit=CG==='D'?'일':CG==='W'?'주':'개월';
+  let h='';
+
+  if(q.nTrades<10)
+    h+=`<div class="qwarn">⚠ 거래 표본 ${q.nTrades}건 — 통계적 신뢰도가 낮습니다. 기간을 늘리거나 여러 종목으로 교차검증하세요.</div>`;
+
+  h+='<div class="qsec">위험조정 수익 (연율화)</div><div class="qm-grid">';
+  h+=_qtile('CAGR',pf(q.cagr,1)+'%','',sg(q.cagr));
+  h+=_qtile('Sharpe',q.sharpe.toFixed(2),'',_qgrade(q.sharpe,1,0));
+  h+=_qtile('Sortino',q.sortino.toFixed(2),'',_qgrade(q.sortino,1.5,0));
+  h+=_qtile('Calmar',q.calmar.toFixed(2),'',_qgrade(q.calmar,1,0));
+  h+=_qtile('변동성',q.vol.toFixed(1)+'%');
+  h+=_qtile('MDD','-'+bt.maxDD.toFixed(1)+'%','','var(--rd)');
+  h+=_qtile('MDD 기간',q.ddDur+unit);
+  h+=_qtile('시장노출',q.expo.toFixed(0)+'%');
+  h+='</div>';
+
+  h+='<div class="qsec">거래 통계</div><div class="qm-grid">';
+  h+=_qtile('Profit Factor',q.pf>=99?'∞':q.pf.toFixed(2),'',_qgrade(q.pf,1.5,1));
+  h+=_qtile('손익비 R',q.payoff.toFixed(2),'',_qgrade(q.payoff,1.5,1));
+  h+=_qtile('기대값/회',pf(q.expectancy,2)+'%','',sg(q.expectancy));
+  h+=_qtile('평균 수익',pf(q.avgWin,1)+'%','','var(--gn)');
+  h+=_qtile('평균 손실','-'+q.avgLoss.toFixed(1)+'%','','var(--rd)');
+  h+=_qtile('최고/최악',pf(q.best,0)+'/'+q.worst.toFixed(0)+'%');
+  h+=_qtile('최다 연승/연패',q.mcw+' / '+q.mcl);
+  h+=_qtile('평균 보유',q.avgBars.toFixed(0)+unit);
+  h+='</div>';
+
+  h+='<div class="qsec">Buy &amp; Hold 대비</div>';
+  h+=`<div class="qbar">
+    <span>전략: <b style="color:${sg(bt.totalPnl)}">${pf(bt.totalPnl,1)}%</b></span>
+    <span>단순보유: <b style="color:${sg(q.bh)}">${pf(q.bh,1)}%</b></span>
+    <span>알파: <b style="color:${sg(q.alpha)}">${pf(q.alpha,1)}%p</b></span>
+    <span style="color:var(--t3)">${q.alpha>=0?'✓ 전략이 우위':'✗ 그냥 들고 있는 게 나았음'}</span>
+  </div>`;
+
+  h+='<div class="qsec">켈리 기준 베팅비중</div>';
+  const kc=q.kelly>0?'var(--gn)':'var(--rd)';
+  h+=`<div class="qbar">
+    <span>Full Kelly: <b style="color:${kc}">${q.kelly.toFixed(1)}%</b></span>
+    <span>Half Kelly: <b style="color:${kc}">${(q.kelly/2).toFixed(1)}%</b></span>
+    <span style="color:var(--t3)">${q.kelly<=0?'기대값이 음수 — 베팅하지 않는 것이 최적':'실무는 변동성 완화를 위해 Half Kelly 이하를 권장'}</span>
+  </div>`;
+
+  if(mc){
+    const seg=(c,f)=>`<div class="qmc-seg" style="background:${c};flex:${f}"></div>`;
+    h+=`<div class="qsec">몬테카를로 (거래순서 ${mc.runs}회 재추출)</div>`;
+    h+=`<div class="qmc">${seg('var(--rd)',1)}${seg('rgba(220,38,38,.35)',1)}${seg('rgba(5,150,105,.35)',1)}${seg('var(--gn)',1)}</div>`;
+    h+=`<div class="qm-grid">`;
+    h+=_qtile('비관 5%',pf(mc.p5,0)+'%','',sg(mc.p5));
+    h+=_qtile('중앙값',pf(mc.p50,0)+'%','',sg(mc.p50));
+    h+=_qtile('낙관 95%',pf(mc.p95,0)+'%','',sg(mc.p95));
+    h+=_qtile('손실 확률',mc.probLoss.toFixed(0)+'%','',_qgrade(-mc.probLoss,-30,-50));
+    h+=_qtile('예상 MDD','-'+mc.medDD.toFixed(0)+'%','','var(--rd)');
+    h+=_qtile('최악 MDD','-'+mc.worstDD.toFixed(0)+'%','','var(--rd)');
+    h+='</div>';
+    h+=`<div style="font-size:10px;color:var(--t3);font-family:'JetBrains Mono',monospace;line-height:1.5">
+      실제 수익률(${pf(bt.totalPnl,1)}%)이 중앙값(${pf(mc.p50,0)}%)보다 크게 높다면 운이 좋았던 것일 수 있습니다.
+      손실 확률이 30%를 넘으면 실전 투입 전 재검토가 필요합니다.</div>`;
+  }
+  return h;
+}
+
+function toggleQuantReport(){
+  const el=document.getElementById('qreport'),b=document.getElementById('qtogbtn');
+  if(!el)return;
+  const on=el.style.display==='none';
+  el.style.display=on?'block':'none';
+  b.textContent=on?'▲ 퀀트 리포트 접기':'▼ 퀀트 리포트 펼치기 (Sharpe·켈리·몬테카를로)';
 }
 
 // ══ BACKTEST ANIMATION ══
@@ -2263,6 +2452,7 @@ function _initBtModal(){
   const fmtV=v=>kr?Math.round(v).toLocaleString('ko-KR')+'원':'$'+v.toFixed(0);
   const pC=v=>v>=0?'var(--gn)':'var(--rd)';
   const ff="font-family:'JetBrains Mono',monospace";
+  const _q=perfStats(d,rows);
   document.getElementById('bta-info').innerHTML=`
     <div style="${ff};font-size:10px;color:var(--t3);margin-bottom:6px">
       ${SD.ticker} · ${rows.dates[0]} ~ ${rows.dates[n-1]} · ${n}봉 · 초기자금 ${fmtV(d.INIT)}
@@ -2273,7 +2463,10 @@ function _initBtModal(){
       <span>거래: <b>${d.trades.length}회</b> (승${d.wins}/패${d.losses})</span>
       <span>승률: <b style="color:${pC(d.winRate-50)}">${d.winRate.toFixed(0)}%</b></span>
       <span>최대낙폭: <b style="color:var(--rd)">-${d.maxDD.toFixed(1)}%</b></span>
-    </div>`;
+      <span>Sharpe: <b style="color:${pC(_q.sharpe)}">${_q.sharpe.toFixed(2)}</b></span>
+    </div>
+    <button id="qtogbtn" class="qtog" onclick="toggleQuantReport()">▼ 퀀트 리포트 펼치기 (Sharpe·켈리·몬테카를로)</button>
+    <div id="qreport" style="display:none">${renderQuantReport(d,rows)}</div>`;
   document.getElementById('bta-log').innerHTML='<div style="font-size:10px;color:var(--t3);text-align:center;padding:10px">▶ 재생 버튼을 눌러 시작하세요</div>';
   document.getElementById('bta-playbtn').textContent='▶ 재생';
   _drawBtChart(0,true);
